@@ -2,7 +2,7 @@
 
 Ein moderner, plattformübergreifender und einfach zu bedienender Kalorientracker. Diese App wurde entwickelt, um die tägliche Nahrungsaufnahme unkompliziert zu protokollieren und Fitnessziele zu unterstützen. Das Projekt ist ein Rewrite der ursprünglichen Android-App in **Flutter**.
 
-## <img src="https://github.com/user-attachments/assets/e2c36eda-d5c5-457c-8380-2fe6071a2222" alt="App Screenshot" width="350"/>
+## <img src="https://github.com/user-attachments/assets/1bdafe89-2089-475d-b62c-9eba9724e0ff" alt="App Screenshot" width="350"/>
 
 ## Inhaltsverzeichnis
 
