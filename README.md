@@ -84,6 +84,17 @@ Stelle sicher, dass die folgende Software auf deinem System installiert ist:
 
 ---
 
+### Nutzung auf iOS (via Web)
+
+Da eine native iOS-App ohne Apple Developer Account und Mac schwer zu verteilen ist, kann die App sehr gut als **Web-App** im Safari-Browser genutzt werden.
+
+1.  Öffne die Web-Version der App in **Safari** auf deinem iPhone.
+2.  Tippe unten auf den **Teilen-Button** (Viereck mit Pfeil nach oben).
+3.  Wähle **"Zum Home-Bildschirm"** aus.
+4.  Nun erscheint die App wie eine normale App auf deinem Startbildschirm und kann im Vollbildmodus ohne Browser-Leiste genutzt werden.
+
+---
+
 ## Verwendung
 
 Nachdem die App gestartet ist, kannst du beginnen, deine Mahlzeiten hinzuzufügen. Zuvor musst du deine Profildaten eingeben, sowie auch deinen Gemini API Key (oder Claude Key), den sich jeder kostenlos besorgen kann: [https://ai.google.dev/gemini-api/docs/api-key](https://ai.google.dev/gemini-api/docs/api-key)
