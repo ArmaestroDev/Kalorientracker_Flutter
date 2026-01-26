@@ -5,18 +5,13 @@ import 'logic/providers/main_provider.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/screens/home_screen.dart';
 
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'data/database/initialize_database.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('de_DE', null);
 
-  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-  }
+  initializeDatabase();
 
   runApp(const KalorientrackerApp());
 }

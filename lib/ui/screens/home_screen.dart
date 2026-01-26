@@ -399,6 +399,12 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               FloatingActionButton.small(
+                heroTag: 'food',
+                onPressed: _showAddFoodDialog,
+                child: const Icon(Icons.food_bank_sharp),
+              ),
+              const SizedBox(height: 8),
+              FloatingActionButton.small(
                 heroTag: 'scan',
                 onPressed: _openBarcodeScanner,
                 child: const Icon(Icons.qr_code_scanner),
@@ -408,12 +414,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 heroTag: 'activity',
                 onPressed: _showAddActivityDialog,
                 child: const Icon(Icons.directions_run),
-              ),
-              const SizedBox(height: 8),
-              FloatingActionButton(
-                heroTag: 'food',
-                onPressed: _showAddFoodDialog,
-                child: const Icon(Icons.add),
               ),
             ],
           ),
