@@ -211,7 +211,7 @@ class MainProvider extends ChangeNotifier {
 
       if (activityInfo != null && activityInfo.caloriesBurned > 0) {
         final newEntry = ActivityEntry(
-          name: activityName,
+          name: activityInfo.name,
           caloriesBurned: activityInfo.caloriesBurned,
           date: _selectedDate,
         );

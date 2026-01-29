@@ -73,6 +73,7 @@ RULES:
 1. NEVER respond with anything other than the JSON object. Do not add text like "Here is the JSON:".
 2. If the input is not a food, return a JSON object with all values set to 0, e.g., {"name": "Unknown", "calories": 0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}.
 3. Capitalize the name of the food in the 'name' field.
+4. The "name" string for the json object that you return should be in the german language.
 
 USER INPUT:
 Food Name: "$foodName"
@@ -97,6 +98,7 @@ RULES:
 1. NEVER respond with anything other than the JSON object.
 2. If the input is not a recognizable activity, return a JSON object with calories_burned set to 0. e.g. {"name": "Unknown Activity", "calories_burned": 0}.
 3. Capitalize the name of the activity in the 'name' field.
+4. The "name" string for the json object that you return should be in the german language.
 
 USER INPUT:
 Activity: "$activityName"
