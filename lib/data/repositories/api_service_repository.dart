@@ -4,17 +4,23 @@ import '../services/food_api_service.dart';
 
 /// Repository that handles all API calls for nutrition and activity data
 class ApiServiceRepository {
-  final GenerativeService _apiService;
+  GenerativeService? _apiService;
   final FoodApiService _foodApiService = FoodApiService();
 
-  ApiServiceRepository(this._apiService);
+  ApiServiceRepository([this._apiService]);
+
+  void updateService(GenerativeService service) {
+    _apiService = service;
+  }
 
   Future<FoodNutritionInfo?> fetchFoodNutrition(
     String foodName,
     String description,
   ) async {
+    if (_apiService == null) return null;
+
     final prompt = _buildFoodPrompt(foodName, description);
-    final jsonString = await _apiService.getApiResponse(prompt);
+    final jsonString = await _apiService!.getApiResponse(prompt);
 
     if (jsonString == null) return null;
 
@@ -34,8 +40,10 @@ class ApiServiceRepository {
   }
 
   Future<ActivityInfo?> fetchActivityCalories(String activityName) async {
+    if (_apiService == null) return null;
+
     final prompt = _buildActivityPrompt(activityName);
-    final jsonString = await _apiService.getApiResponse(prompt);
+    final jsonString = await _apiService!.getApiResponse(prompt);
 
     if (jsonString == null) return null;
 

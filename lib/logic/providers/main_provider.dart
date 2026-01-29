@@ -15,11 +15,17 @@ import '../goals_calculator.dart';
 
 /// Main state provider for the Kalorientracker app
 class MainProvider extends ChangeNotifier {
-  final LogRepository _logRepository = LogRepository();
-  final UserPreferencesRepository _prefsRepository =
-      UserPreferencesRepository();
+  final LogRepository _logRepository;
+  final UserPreferencesRepository _prefsRepository;
+  final ApiServiceRepository _apiServiceRepository;
 
-  ApiServiceRepository? _apiServiceRepository;
+  MainProvider({
+    required LogRepository logRepository,
+    required UserPreferencesRepository prefsRepository,
+    required ApiServiceRepository apiServiceRepository,
+  }) : _logRepository = logRepository,
+       _prefsRepository = prefsRepository,
+       _apiServiceRepository = apiServiceRepository;
 
   // State
   DateTime _selectedDate = DateTime.now();
@@ -78,7 +84,7 @@ class MainProvider extends ChangeNotifier {
     } else {
       service = GeminiApiService(profile.geminiApiKey);
     }
-    _apiServiceRepository = ApiServiceRepository(service);
+    _apiServiceRepository.updateService(service);
   }
 
   bool _isApiKeyMissing() {
@@ -121,7 +127,7 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final nutritionInfo = await _apiServiceRepository!.fetchFoodNutrition(
+      final nutritionInfo = await _apiServiceRepository.fetchFoodNutrition(
         foodName,
         description,
       );
@@ -156,7 +162,7 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final nutritionInfo = await _apiServiceRepository!.fetchBarCodeNutrition(
+      final nutritionInfo = await _apiServiceRepository.fetchBarCodeNutrition(
         code,
       );
 
@@ -205,7 +211,7 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final activityInfo = await _apiServiceRepository!.fetchActivityCalories(
+      final activityInfo = await _apiServiceRepository.fetchActivityCalories(
         activityName,
       );
 
@@ -237,7 +243,7 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final nutritionInfo = await _apiServiceRepository!.fetchFoodNutrition(
+      final nutritionInfo = await _apiServiceRepository.fetchFoodNutrition(
         foodEntry.name,
         '',
       );
@@ -272,7 +278,7 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final activityInfo = await _apiServiceRepository!.fetchActivityCalories(
+      final activityInfo = await _apiServiceRepository.fetchActivityCalories(
         activityEntry.name,
       );
 
