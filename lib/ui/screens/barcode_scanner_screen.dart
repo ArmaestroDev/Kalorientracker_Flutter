@@ -21,13 +21,28 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   }
 
   void _onBarcodeDetected(BarcodeCapture capture) {
-    if (_hasScanned) return;
+    // DEBUG: Log every detection callback
+    print(
+      'DEBUG: _onBarcodeDetected called, barcodes count: ${capture.barcodes.length}',
+    );
+
+    if (_hasScanned) {
+      print('DEBUG: Already scanned, ignoring');
+      return;
+    }
 
     final barcode = capture.barcodes.firstOrNull;
+    print(
+      'DEBUG: First barcode: ${barcode?.rawValue}, format: ${barcode?.format}',
+    );
+
     if (barcode?.rawValue != null) {
+      print('DEBUG: Valid barcode detected: ${barcode!.rawValue}');
       _hasScanned = true;
-      widget.onBarcodeScanned(barcode!.rawValue!);
-      Navigator.of(context).pop();
+      widget.onBarcodeScanned(barcode.rawValue!);
+      // Note: Caller is responsible for navigation via the callback
+    } else {
+      print('DEBUG: Barcode rawValue is null');
     }
   }
 

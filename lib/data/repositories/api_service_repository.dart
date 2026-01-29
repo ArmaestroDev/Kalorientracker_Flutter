@@ -1,6 +1,16 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import '../services/generative_service.dart';
 import '../services/food_api_service.dart';
+
+/// Result of unified entry classification - either food or activity
+class UnifiedEntry {
+  final bool isFood;
+  final FoodNutritionInfo? foodInfo;
+  final ActivityInfo? activityInfo;
+
+  UnifiedEntry({required this.isFood, this.foodInfo, this.activityInfo});
+}
 
 /// Repository that handles all API calls for nutrition and activity data
 class ApiServiceRepository {
@@ -58,6 +68,77 @@ class ApiServiceRepository {
     }
   }
 
+  /// Classify user input as food or activity and return appropriate data
+  Future<UnifiedEntry?> classifyAndProcess(
+    String input,
+    String description,
+  ) async {
+    if (_apiService == null) return null;
+
+    final prompt = _buildClassificationPrompt(input, description);
+    final jsonString = await _apiService!.getApiResponse(prompt);
+
+    if (jsonString == null) return null;
+
+    try {
+      final cleanJson = _cleanJsonString(jsonString);
+      final json = jsonDecode(cleanJson) as Map<String, dynamic>;
+      final type = json['type'] as String?;
+
+      if (type == 'food') {
+        return UnifiedEntry(
+          isFood: true,
+          foodInfo: FoodNutritionInfo(
+            name: json['name'] as String? ?? 'Unknown',
+            calories: (json['calories'] as num?)?.toInt() ?? 0,
+            protein: (json['protein'] as num?)?.toDouble() ?? 0.0,
+            carbs: (json['carbs'] as num?)?.toDouble() ?? 0.0,
+            fat: (json['fat'] as num?)?.toDouble() ?? 0.0,
+          ),
+        );
+      } else if (type == 'activity') {
+        return UnifiedEntry(
+          isFood: false,
+          activityInfo: ActivityInfo(
+            name: json['name'] as String? ?? 'Unknown Activity',
+            caloriesBurned: (json['calories_burned'] as num?)?.toInt() ?? 0,
+          ),
+        );
+      }
+      return null;
+    } catch (e) {
+      print('JsonParsingError: Error parsing classification: $e');
+      print('Raw response: $jsonString');
+      return null;
+    }
+  }
+
+  /// Estimate food nutrition from an image
+  Future<FoodNutritionInfo?> estimateFoodFromImage(
+    Uint8List imageBytes,
+    String? description,
+  ) async {
+    if (_apiService == null) return null;
+
+    final prompt = _buildImageFoodPrompt(description);
+    final jsonString = await _apiService!.getApiResponseWithImage(
+      prompt,
+      imageBytes,
+    );
+
+    if (jsonString == null) return null;
+
+    try {
+      final cleanJson = _cleanJsonString(jsonString);
+      final json = jsonDecode(cleanJson) as Map<String, dynamic>;
+      return FoodNutritionInfo.fromJson(json);
+    } catch (e) {
+      print('JsonParsingError: Error parsing image food data: $e');
+      print('Raw response: $jsonString');
+      return null;
+    }
+  }
+
   String _cleanJsonString(String response) {
     var clean = response.trim();
     if (clean.startsWith('```json')) {
@@ -110,6 +191,54 @@ RULES:
 
 USER INPUT:
 Activity: "$activityName"
+''';
+  }
+
+  String _buildClassificationPrompt(String input, String description) {
+    return '''
+You are a smart classification assistant. Your task is to determine if the user input describes a FOOD/MEAL or an ACTIVITY/EXERCISE.
+
+Respond ONLY with a valid JSON object with this structure:
+- If it's a FOOD: {"type": "food", "name": "string", "calories": integer, "protein": double, "carbs": double, "fat": double}
+- If it's an ACTIVITY: {"type": "activity", "name": "string", "calories_burned": integer}
+
+RULES:
+1. NEVER respond with anything other than the JSON object.
+2. Classify as "activity" if the input describes physical exercise, sports, walking, running, gym, etc.
+3. Classify as "food" if the input describes food, meals, drinks, snacks, etc.
+4. The "name" string should be in German language.
+5. If you cannot determine the type, default to "food" with 0 values.
+
+EXAMPLES:
+- "100g Hühnerbrust" -> food
+- "30 Minuten Joggen" -> activity
+- "Apfel mit Erdnussbutter" -> food
+- "1 Stunde Schwimmen" -> activity
+
+USER INPUT:
+Input: "$input"
+Description: "$description"
+''';
+  }
+
+  String _buildImageFoodPrompt(String? description) {
+    final descText = description != null && description.isNotEmpty
+        ? 'User description: "$description"'
+        : 'No description provided.';
+
+    return '''
+You are a nutrition analysis assistant. Analyze the food in this image and estimate its nutritional values.
+$descText
+
+Respond ONLY with a valid JSON object with this exact structure:
+{"name": "string", "calories": integer, "protein": double, "carbs": double, "fat": double}
+
+RULES:
+1. NEVER respond with anything other than the JSON object.
+2. Estimate the portion size visible in the image.
+3. The "name" string should be in German language.
+4. If you cannot identify the food, return {"name": "Unbekanntes Essen", "calories": 0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}.
+5. Be reasonably accurate but err on the side of providing a useful estimate.
 ''';
   }
 }

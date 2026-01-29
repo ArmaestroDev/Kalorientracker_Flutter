@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'generative_service.dart';
 
@@ -27,6 +28,23 @@ class GeminiApiService implements GenerativeService {
       return response.text;
     } catch (e) {
       print('GeminiError: Error fetching data from API: $e');
+      throw Exception('Gemini API Error: $e');
+    }
+  }
+
+  @override
+  Future<String?> getApiResponseWithImage(
+    String prompt,
+    Uint8List imageBytes,
+  ) async {
+    try {
+      final content = [
+        Content.multi([TextPart(prompt), DataPart('image/jpeg', imageBytes)]),
+      ];
+      final response = await _model.generateContent(content);
+      return response.text;
+    } catch (e) {
+      print('GeminiError: Error fetching image data from API: $e');
       throw Exception('Gemini API Error: $e');
     }
   }

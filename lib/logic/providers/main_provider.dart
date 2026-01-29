@@ -234,6 +234,102 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Add unified entry - AI classifies as food or activity automatically
+  Future<void> addUnifiedEntry(String input, String description) async {
+    if (_isApiKeyMissing()) return;
+
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final unifiedEntry = await _apiServiceRepository.classifyAndProcess(
+        input,
+        description,
+      );
+
+      if (unifiedEntry == null) {
+        _errorMessage = 'Eintrag konnte nicht klassifiziert werden.';
+      } else if (unifiedEntry.isFood && unifiedEntry.foodInfo != null) {
+        final foodInfo = unifiedEntry.foodInfo!;
+        if (foodInfo.calories > 0) {
+          final newEntry = FoodEntry(
+            name: foodInfo.name,
+            calories: foodInfo.calories,
+            protein: foodInfo.protein.toInt(),
+            carbs: foodInfo.carbs.toInt(),
+            fat: foodInfo.fat.toInt(),
+            date: _selectedDate,
+          );
+          await _logRepository.addFoodEntry(newEntry);
+          await _loadEntriesForDate(_selectedDate);
+        } else {
+          _errorMessage = 'Nährwertdaten konnten nicht abgerufen werden.';
+        }
+      } else if (!unifiedEntry.isFood && unifiedEntry.activityInfo != null) {
+        final activityInfo = unifiedEntry.activityInfo!;
+        if (activityInfo.caloriesBurned > 0) {
+          final newEntry = ActivityEntry(
+            name: activityInfo.name,
+            caloriesBurned: activityInfo.caloriesBurned,
+            date: _selectedDate,
+          );
+          await _logRepository.addActivityEntry(newEntry);
+          await _loadEntriesForDate(_selectedDate);
+        } else {
+          _errorMessage = 'Verbrannte Kalorien konnten nicht geschätzt werden.';
+        }
+      } else {
+        _errorMessage = 'Eintrag konnte nicht verarbeitet werden.';
+      }
+    } catch (e) {
+      _errorMessage = 'Fehler: ${e.toString().replaceAll('Exception: ', '')}';
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  /// Add food from image using AI estimation
+  Future<void> addFoodFromImage(
+    Uint8List imageBytes,
+    String? description,
+  ) async {
+    if (_isApiKeyMissing()) return;
+
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final foodInfo = await _apiServiceRepository.estimateFoodFromImage(
+        imageBytes,
+        description,
+      );
+
+      if (foodInfo != null && foodInfo.calories > 0) {
+        final newEntry = FoodEntry(
+          name: foodInfo.name,
+          calories: foodInfo.calories,
+          protein: foodInfo.protein.toInt(),
+          carbs: foodInfo.carbs.toInt(),
+          fat: foodInfo.fat.toInt(),
+          date: _selectedDate,
+        );
+        await _logRepository.addFoodEntry(newEntry);
+        await _loadEntriesForDate(_selectedDate);
+      } else {
+        _errorMessage =
+            'Nährwertdaten konnten aus dem Bild nicht geschätzt werden.';
+      }
+    } catch (e) {
+      _errorMessage = 'Fehler: ${e.toString().replaceAll('Exception: ', '')}';
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
   /// Re-fetch food item with AI
   Future<void> reFetchFoodItem(FoodEntry foodEntry) async {
     if (_isApiKeyMissing()) return;

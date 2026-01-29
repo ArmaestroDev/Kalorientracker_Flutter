@@ -72,7 +72,6 @@ class GoalsCalculator {
         fatRatio = 0.25;
         break;
       case FitnessGoal.maintainWeight:
-      default:
         // Balanced approach
         proteinRatio = 0.30;
         fatRatio = 0.30;

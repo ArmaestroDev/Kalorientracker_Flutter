@@ -8,14 +8,14 @@ import '../theme/app_theme.dart';
 import '../widgets/goals_summary_card.dart';
 import '../widgets/food_item_row.dart';
 import '../widgets/activity_item_row.dart';
-import '../widgets/dialogs/add_food_dialog.dart';
-import '../widgets/dialogs/add_activity_dialog.dart';
+import '../widgets/dialogs/add_entry_dialog.dart';
+import '../widgets/dialogs/unified_input_dialog.dart';
 import '../widgets/dialogs/edit_food_dialog.dart';
 import '../widgets/dialogs/edit_activity_dialog.dart';
 import '../widgets/dialogs/barcode_scanner_dialog.dart';
 import '../widgets/dialogs/delete_confirmation_dialog.dart';
 import 'profile_screen.dart';
-import 'barcode_scanner_screen.dart';
+import 'photo_input_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,36 +33,41 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _showAddFoodDialog() {
+  void _showAddEntryDialog() {
     showDialog(
       context: context,
-      builder: (context) => AddFoodDialog(
-        onAddFood: (name, description) {
-          context.read<MainProvider>().addFoodItem(name, description);
-        },
+      builder: (context) => AddEntryDialog(
+        onPhotoSelected: _openPhotoInput,
+        onManualSelected: _showUnifiedInputDialog,
       ),
     );
   }
 
-  void _showAddActivityDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AddActivityDialog(
-        onAddActivity: (name) {
-          context.read<MainProvider>().addActivityItem(name);
-        },
-      ),
-    );
-  }
+  void _openPhotoInput() {
+    // Capture provider reference BEFORE navigation to avoid deactivated context error
+    final provider = context.read<MainProvider>();
 
-  void _openBarcodeScanner() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (context) => BarcodeScannerScreen(
+        builder: (context) => PhotoInputScreen(
           onBarcodeScanned: (barcode) {
-            context.read<MainProvider>().fetchFoodInfoByBarcode(barcode);
+            provider.fetchFoodInfoByBarcode(barcode);
+          },
+          onPhotoTaken: (imageBytes, description) {
+            provider.addFoodFromImage(imageBytes, description);
           },
         ),
+      ),
+    );
+  }
+
+  void _showUnifiedInputDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => UnifiedInputDialog(
+        onSubmit: (name, description) {
+          context.read<MainProvider>().addUnifiedEntry(name, description);
+        },
       ),
     );
   }
@@ -395,27 +400,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
-          floatingActionButton: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton.small(
-                heroTag: 'food',
-                onPressed: _showAddFoodDialog,
-                child: const Icon(Icons.food_bank_sharp),
-              ),
-              const SizedBox(height: 8),
-              FloatingActionButton.small(
-                heroTag: 'scan',
-                onPressed: _openBarcodeScanner,
-                child: const Icon(Icons.qr_code_scanner),
-              ),
-              const SizedBox(height: 8),
-              FloatingActionButton.small(
-                heroTag: 'activity',
-                onPressed: _showAddActivityDialog,
-                child: const Icon(Icons.directions_run),
-              ),
-            ],
+          floatingActionButton: FloatingActionButton(
+            onPressed: _showAddEntryDialog,
+            child: const Icon(Icons.add),
           ),
         );
       },
