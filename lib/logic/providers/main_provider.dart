@@ -186,23 +186,41 @@ class MainProvider extends ChangeNotifier {
   }
 
   Future<void> _saveFoodItemToHistory(FoodNutritionInfo info) async {
-    // Only save if we have normalized data
-    if (info.caloriesPer100g != null) {
-      // Use name as ID for now to avoid duplicates, or generate simple hash
-      final id = info.name.toLowerCase().trim().replaceAll(RegExp(r'\s+'), '_');
+    // Generate ID
+    final id = info.name.toLowerCase().trim().replaceAll(RegExp(r'\s+'), '_');
 
-      final item = FoodItem(
-        id: id,
-        name: info.name,
-        category: info.category ?? 'Allgemein',
-        caloriesPer100g: info.caloriesPer100g!,
-        proteinPer100g: info.proteinPer100g ?? 0,
-        carbsPer100g: info.carbsPer100g ?? 0,
-        fatPer100g: info.fatPer100g ?? 0,
-        lastUsed: DateTime.now(),
-      );
-      await _logRepository.saveFoodItem(item);
+    // Determine values to save
+    double c100, p100, cb100, f100;
+    String unit;
+
+    if (info.caloriesPer100g != null) {
+      c100 = info.caloriesPer100g!;
+      p100 = info.proteinPer100g ?? 0;
+      cb100 = info.carbsPer100g ?? 0;
+      f100 = info.fatPer100g ?? 0;
+      unit = 'g';
+    } else {
+      // Fallback: Save as "1 Portion" using the total values
+      c100 = info.calories.toDouble();
+      p100 = info.protein;
+      cb100 = info.carbs;
+      f100 = info.fat;
+      unit = 'Portion';
     }
+
+    final item = FoodItem(
+      id: id,
+      name: info.name,
+      category: info.category ?? 'Allgemein',
+      caloriesPer100g:
+          c100, // Represents per 100g OR per Portion depending on unit
+      proteinPer100g: p100,
+      carbsPer100g: cb100,
+      fatPer100g: f100,
+      defaultUnit: unit,
+      lastUsed: DateTime.now(),
+    );
+    await _logRepository.saveFoodItem(item);
   }
 
   /// Fetch food info by barcode
@@ -232,7 +250,7 @@ class MainProvider extends ChangeNotifier {
 
   /// Add scanned food item with gram weight
   Future<void> addScannedFoodItem(FoodNutritionInfo foodInfo, int grams) async {
-    // Save to history
+    // Save to history (will save as 100g based since barcode usually has it)
     await _saveFoodItemToHistory(foodInfo);
 
     final factor = grams / 100.0;
@@ -267,18 +285,20 @@ class MainProvider extends ChangeNotifier {
       proteinPer100g: item.proteinPer100g,
       carbsPer100g: item.carbsPer100g,
       fatPer100g: item.fatPer100g,
-      defaultUnit: unit,
+      defaultUnit:
+          unit, // Remember last used unit? Maybe keep original default.
       lastUsed: DateTime.now(),
     );
     await _logRepository.saveFoodItem(updatedItem);
 
-    // Calculate values (assuming unit is 'g' or similar weight-based for now)
-    // If unit is 'g' or 'ml', factor is amount / 100.
-    // If unit is 'Stk' (piece), we might need piece weight. For now assume gram-based logic is primary.
-    double factor = amount / 100.0;
-    if (unit != 'g' && unit != 'ml') {
-      // Fallback or specific logic for pieces if we stored piece weight.
-      // For simple MVP we assume user inputs grams if DB stores per 100g.
+    // Calculate values
+    double factor;
+    if (item.defaultUnit == 'Portion' || unit == 'Portion' || unit == 'Stk') {
+      // If stored as portion, amount is number of portions
+      factor = amount;
+    } else {
+      // Grams / ml
+      factor = amount / 100.0;
     }
 
     final newEntry = FoodEntry(

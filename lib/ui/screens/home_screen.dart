@@ -60,6 +60,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showSmartScalingDialog(FoodItem item) {
     final TextEditingController amountController = TextEditingController();
+    final isPortion =
+        item.defaultUnit == 'Portion' || item.defaultUnit == 'Stk';
+    final unitLabel = isPortion ? 'Anzahl' : 'Menge (g/ml)';
+    final suffix = isPortion ? item.defaultUnit : 'g';
+    final standardText = isPortion
+        ? 'Standard: ${item.caloriesPer100g.toInt()} kcal pro ${item.defaultUnit}'
+        : 'Standard: ${item.caloriesPer100g.toInt()} kcal pro 100g';
+
     showDialog(
       context: context,
       builder: (context) {
@@ -68,15 +76,17 @@ class _HomeScreenState extends State<HomeScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Standard: ${item.caloriesPer100g.toInt()} kcal pro 100g'),
+              Text(standardText),
               const SizedBox(height: 16),
               TextField(
                 controller: amountController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Menge (g/ml)',
-                  border: OutlineInputBorder(),
-                  suffixText: 'g',
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: unitLabel,
+                  border: const OutlineInputBorder(),
+                  suffixText: suffix,
                 ),
                 autofocus: true,
               ),
@@ -89,12 +99,14 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             FilledButton(
               onPressed: () {
-                final amount = double.tryParse(amountController.text);
+                final amount = double.tryParse(
+                  amountController.text.replaceAll(',', '.'),
+                );
                 if (amount != null && amount > 0) {
                   context.read<MainProvider>().addFoodItemFromHistory(
                     item,
                     amount,
-                    'g',
+                    suffix,
                   );
                   Navigator.of(context).pop();
                 }

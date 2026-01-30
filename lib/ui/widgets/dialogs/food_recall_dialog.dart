@@ -16,7 +16,6 @@ class _FoodRecallDialogState extends State<FoodRecallDialog> {
   final TextEditingController _searchController = TextEditingController();
   List<FoodItem> _items = [];
   bool _isLoading = true;
-  String _activeCategory = 'All';
 
   @override
   void initState() {
