@@ -39,10 +39,12 @@ class ActivityEntry {
 
   factory ActivityEntry.fromMap(Map<String, dynamic> map) {
     return ActivityEntry(
-      id: map['id'] as String,
-      name: map['name'] as String,
-      caloriesBurned: map['caloriesBurned'] as int,
-      date: DateTime.parse(map['date'] as String),
+      id: map['id'] as String? ?? const Uuid().v4(),
+      name: map['name'] as String? ?? 'Unbekannte Aktivität',
+      caloriesBurned: map['caloriesBurned'] as int? ?? 0,
+      date: map['date'] != null
+          ? DateTime.parse(map['date'] as String)
+          : DateTime.now(),
     );
   }
 }

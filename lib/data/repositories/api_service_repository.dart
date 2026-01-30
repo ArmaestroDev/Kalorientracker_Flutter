@@ -163,6 +163,7 @@ RULES:
 2. If the input is not a food, return a JSON object with all values set to 0, e.g., {"name": "Unknown", "calories": 0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}.
 3. Capitalize the name of the food in the 'name' field.
 4. The "name" string for the json object that you return should be in the german language.
+5. IMPORTANT: Include specific details like quantity, brand, or type in the 'name' if provided (e.g., "500g Steak" instead of just "Steak").
 
 USER INPUT:
 Food Name: "$foodName"
@@ -188,6 +189,7 @@ RULES:
 2. If the input is not a recognizable activity, return a JSON object with calories_burned set to 0. e.g. {"name": "Unknown Activity", "calories_burned": 0}.
 3. Capitalize the name of the activity in the 'name' field.
 4. The "name" string for the json object that you return should be in the german language.
+5. IMPORTANT: Include duration or intensity in the 'name' if provided (e.g., "30 Min Joggen" instead of just "Joggen").
 
 USER INPUT:
 Activity: "$activityName"
@@ -208,6 +210,10 @@ RULES:
 3. Classify as "food" if the input describes food, meals, drinks, snacks, etc.
 4. The "name" string should be in German language.
 5. If you cannot determine the type, default to "food" with 0 values.
+6. IMPORTANT: Include specific details like quantity, brand, duration, or intensity in the 'name' if provided by the user.
+   - Example: "500g Steak" -> name: "500g Steak" (NOT just "Steak")
+   - Example: "30 Min Joggen" -> name: "30 Min Joggen"
+   - Example: "Coca Cola Zero" -> name: "Coca Cola Zero"
 
 EXAMPLES:
 - "100g Hühnerbrust" -> food
@@ -239,6 +245,7 @@ RULES:
 3. The "name" string should be in German language.
 4. If you cannot identify the food, return {"name": "Unbekanntes Essen", "calories": 0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}.
 5. Be reasonably accurate but err on the side of providing a useful estimate.
+6. Include estimated quantity or distinctive features in the 'name' (e.g. "Teller Pasta Carbonara" or "2 Scheiben Toast").
 ''';
   }
 }

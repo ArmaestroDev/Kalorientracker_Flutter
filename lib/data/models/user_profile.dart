@@ -4,6 +4,8 @@ import 'enums.dart';
 class UserProfile {
   final String geminiApiKey;
   final String claudeApiKey;
+  final String openaiApiKey;
+  final String grokApiKey;
   final AiProvider selectedProvider;
   final int age;
   final double weightKg;
@@ -15,6 +17,8 @@ class UserProfile {
   const UserProfile({
     this.geminiApiKey = '',
     this.claudeApiKey = '',
+    this.openaiApiKey = '',
+    this.grokApiKey = '',
     this.selectedProvider = AiProvider.gemini,
     this.age = 0,
     this.weightKg = 0.0,
@@ -27,6 +31,8 @@ class UserProfile {
   UserProfile copyWith({
     String? geminiApiKey,
     String? claudeApiKey,
+    String? openaiApiKey,
+    String? grokApiKey,
     AiProvider? selectedProvider,
     int? age,
     double? weightKg,
@@ -38,6 +44,8 @@ class UserProfile {
     return UserProfile(
       geminiApiKey: geminiApiKey ?? this.geminiApiKey,
       claudeApiKey: claudeApiKey ?? this.claudeApiKey,
+      openaiApiKey: openaiApiKey ?? this.openaiApiKey,
+      grokApiKey: grokApiKey ?? this.grokApiKey,
       selectedProvider: selectedProvider ?? this.selectedProvider,
       age: age ?? this.age,
       weightKg: weightKg ?? this.weightKg,
@@ -52,6 +60,8 @@ class UserProfile {
     return {
       'geminiApiKey': geminiApiKey,
       'claudeApiKey': claudeApiKey,
+      'openaiApiKey': openaiApiKey,
+      'grokApiKey': grokApiKey,
       'selectedProvider': selectedProvider.index,
       'age': age,
       'weightKg': weightKg,
@@ -66,6 +76,8 @@ class UserProfile {
     return UserProfile(
       geminiApiKey: json['geminiApiKey'] as String? ?? '',
       claudeApiKey: json['claudeApiKey'] as String? ?? '',
+      openaiApiKey: json['openaiApiKey'] as String? ?? '',
+      grokApiKey: json['grokApiKey'] as String? ?? '',
       selectedProvider:
           AiProvider.values[json['selectedProvider'] as int? ?? 0],
       age: json['age'] as int? ?? 0,

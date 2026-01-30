@@ -10,6 +10,8 @@ import '../../data/repositories/api_service_repository.dart';
 import '../../data/services/generative_service.dart';
 import '../../data/services/gemini_api_service.dart';
 import '../../data/services/claude_api_service.dart';
+import '../../data/services/openai_api_service.dart';
+import '../../data/services/grok_api_service.dart';
 import '../../data/services/food_api_service.dart';
 import '../goals_calculator.dart';
 
@@ -79,18 +81,39 @@ class MainProvider extends ChangeNotifier {
 
   void _initializeApiService(UserProfile profile) {
     GenerativeService service;
-    if (profile.selectedProvider == AiProvider.claude) {
-      service = ClaudeApiService(profile.claudeApiKey);
-    } else {
-      service = GeminiApiService(profile.geminiApiKey);
+    switch (profile.selectedProvider) {
+      case AiProvider.claude:
+        service = ClaudeApiService(profile.claudeApiKey);
+        break;
+      case AiProvider.openai:
+        service = OpenAiApiService(profile.openaiApiKey);
+        break;
+      case AiProvider.grok:
+        service = GrokApiService(profile.grokApiKey);
+        break;
+      case AiProvider.gemini:
+        service = GeminiApiService(profile.geminiApiKey);
+        break;
     }
     _apiServiceRepository.updateService(service);
   }
 
   bool _isApiKeyMissing() {
-    final isMissing = _userProfile.selectedProvider == AiProvider.gemini
-        ? _userProfile.geminiApiKey.isEmpty
-        : _userProfile.claudeApiKey.isEmpty;
+    bool isMissing = false;
+    switch (_userProfile.selectedProvider) {
+      case AiProvider.gemini:
+        isMissing = _userProfile.geminiApiKey.isEmpty;
+        break;
+      case AiProvider.claude:
+        isMissing = _userProfile.claudeApiKey.isEmpty;
+        break;
+      case AiProvider.openai:
+        isMissing = _userProfile.openaiApiKey.isEmpty;
+        break;
+      case AiProvider.grok:
+        isMissing = _userProfile.grokApiKey.isEmpty;
+        break;
+    }
 
     if (isMissing) {
       _errorMessage =

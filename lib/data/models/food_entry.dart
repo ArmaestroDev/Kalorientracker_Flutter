@@ -54,13 +54,15 @@ class FoodEntry {
 
   factory FoodEntry.fromMap(Map<String, dynamic> map) {
     return FoodEntry(
-      id: map['id'] as String,
-      name: map['name'] as String,
-      calories: map['calories'] as int,
-      protein: map['protein'] as int,
-      carbs: map['carbs'] as int,
-      fat: map['fat'] as int,
-      date: DateTime.parse(map['date'] as String),
+      id: map['id'] as String? ?? const Uuid().v4(),
+      name: map['name'] as String? ?? 'Unbekanntes Essen',
+      calories: map['calories'] as int? ?? 0,
+      protein: map['protein'] as int? ?? 0,
+      carbs: map['carbs'] as int? ?? 0,
+      fat: map['fat'] as int? ?? 0,
+      date: map['date'] != null
+          ? DateTime.parse(map['date'] as String)
+          : DateTime.now(),
     );
   }
 }

@@ -19,6 +19,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _geminiApiKeyController;
   late TextEditingController _claudeApiKeyController;
+  late TextEditingController _openaiApiKeyController;
+  late TextEditingController _grokApiKeyController;
   late TextEditingController _ageController;
   late TextEditingController _weightController;
   late TextEditingController _heightController;
@@ -36,6 +38,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     _claudeApiKeyController = TextEditingController(
       text: widget.initialProfile.claudeApiKey,
+    );
+    _openaiApiKeyController = TextEditingController(
+      text: widget.initialProfile.openaiApiKey,
+    );
+    _grokApiKeyController = TextEditingController(
+      text: widget.initialProfile.grokApiKey,
     );
     _ageController = TextEditingController(
       text: widget.initialProfile.age > 0
@@ -63,6 +71,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void dispose() {
     _geminiApiKeyController.dispose();
     _claudeApiKeyController.dispose();
+    _openaiApiKeyController.dispose();
+    _grokApiKeyController.dispose();
     _ageController.dispose();
     _weightController.dispose();
     _heightController.dispose();
@@ -80,6 +90,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final profile = UserProfile(
       geminiApiKey: _geminiApiKeyController.text,
       claudeApiKey: _claudeApiKeyController.text,
+      openaiApiKey: _openaiApiKeyController.text,
+      grokApiKey: _grokApiKeyController.text,
       selectedProvider: _selectedProvider,
       age: int.tryParse(_ageController.text) ?? 0,
       weightKg: double.tryParse(_weightController.text) ?? 0.0,
@@ -132,12 +144,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 obscureText: true,
               )
-            else
+            else if (_selectedProvider == AiProvider.claude)
               TextFormField(
                 controller: _claudeApiKeyController,
                 decoration: const InputDecoration(
                   labelText: 'Claude API Schlüssel',
                   hintText: 'Gib deinen Claude API-Schlüssel ein',
+                  border: OutlineInputBorder(),
+                ),
+                obscureText: true,
+              )
+            else if (_selectedProvider == AiProvider.openai)
+              TextFormField(
+                controller: _openaiApiKeyController,
+                decoration: const InputDecoration(
+                  labelText: 'OpenAI API Schlüssel',
+                  hintText: 'Gib deinen OpenAI API-Schlüssel ein',
+                  border: OutlineInputBorder(),
+                ),
+                obscureText: true,
+              )
+            else
+              TextFormField(
+                controller: _grokApiKeyController,
+                decoration: const InputDecoration(
+                  labelText: 'Grok API Schlüssel',
+                  hintText: 'Gib deinen Grok API-Schlüssel ein',
                   border: OutlineInputBorder(),
                 ),
                 obscureText: true,

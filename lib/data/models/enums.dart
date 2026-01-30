@@ -1,7 +1,7 @@
 /// Enums used throughout the Kalorientracker app
 library;
 
-enum AiProvider { gemini, claude }
+enum AiProvider { gemini, claude, openai, grok }
 
 enum Gender { male, female }
 
