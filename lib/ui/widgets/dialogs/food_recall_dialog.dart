@@ -95,9 +95,16 @@ class _FoodRecallDialogState extends State<FoodRecallDialog> {
                             '${item.caloriesPer100g.toInt()} kcal/100g • ${item.category}',
                           ),
                           trailing: const Icon(Icons.add_circle_outline),
-                          onTap: () {
+                          onTap: () async {
+                            // Close the recall dialog FIRST
                             Navigator.of(context).pop();
-                            widget.onItemSelected(item);
+
+                            // Then trigger the callback which might open a new dialog
+                            // Use a microtask to ensure the first dialog is fully disposed/popped
+                            // before the next one tries to show.
+                            Future.microtask(() {
+                              widget.onItemSelected(item);
+                            });
                           },
                         );
                       },

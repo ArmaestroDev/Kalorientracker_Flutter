@@ -60,12 +60,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showSmartScalingDialog(FoodItem item) {
     final TextEditingController amountController = TextEditingController();
-    final isPortion =
-        item.defaultUnit == 'Portion' || item.defaultUnit == 'Stk';
+    // Safety check for old database items where defaultUnit might be missing
+    final unit = item.defaultUnit.isEmpty ? 'g' : item.defaultUnit;
+
+    final isPortion = unit == 'Portion' || unit == 'Stk';
     final unitLabel = isPortion ? 'Anzahl' : 'Menge (g/ml)';
-    final suffix = isPortion ? item.defaultUnit : 'g';
+    final suffix = isPortion ? unit : 'g';
     final standardText = isPortion
-        ? 'Standard: ${item.caloriesPer100g.toInt()} kcal pro ${item.defaultUnit}'
+        ? 'Standard: ${item.caloriesPer100g.toInt()} kcal pro $unit'
         : 'Standard: ${item.caloriesPer100g.toInt()} kcal pro 100g';
 
     showDialog(
