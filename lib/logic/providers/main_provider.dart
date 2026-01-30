@@ -635,12 +635,6 @@ class MainProvider extends ChangeNotifier {
           analysisContext =
               "Yearly Review: Analyze the nutrition and activity trends over the last year.";
           break;
-        default:
-          // Fallback for safety
-          start = DateTime(now.year, now.month, now.day);
-          end = start;
-          analysisContext = "Daily Review";
-          break;
       }
 
       // Fetch data
