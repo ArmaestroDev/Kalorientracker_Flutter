@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 /// Food nutrition info from APIs
+/// Food nutrition info from APIs
 class FoodNutritionInfo {
   final String name;
   final int calories;
@@ -9,12 +10,24 @@ class FoodNutritionInfo {
   final double carbs;
   final double fat;
 
+  // Normalized values for DB
+  final String? category;
+  final double? caloriesPer100g;
+  final double? proteinPer100g;
+  final double? carbsPer100g;
+  final double? fatPer100g;
+
   FoodNutritionInfo({
     required this.name,
     required this.calories,
     required this.protein,
     required this.carbs,
     required this.fat,
+    this.category,
+    this.caloriesPer100g,
+    this.proteinPer100g,
+    this.carbsPer100g,
+    this.fatPer100g,
   });
 
   factory FoodNutritionInfo.fromJson(Map<String, dynamic> json) {
@@ -24,6 +37,11 @@ class FoodNutritionInfo {
       protein: (json['protein'] as num?)?.toDouble() ?? 0.0,
       carbs: (json['carbs'] as num?)?.toDouble() ?? 0.0,
       fat: (json['fat'] as num?)?.toDouble() ?? 0.0,
+      category: json['category'] as String?,
+      caloriesPer100g: (json['calories_100g'] as num?)?.toDouble(),
+      proteinPer100g: (json['protein_100g'] as num?)?.toDouble(),
+      carbsPer100g: (json['carbs_100g'] as num?)?.toDouble(),
+      fatPer100g: (json['fat_100g'] as num?)?.toDouble(),
     );
   }
 }
@@ -61,13 +79,28 @@ class FoodApiService {
           final product = json['product'] as Map<String, dynamic>;
           final nutriments = product['nutriments'] as Map<String, dynamic>?;
 
+          final c100 =
+              (nutriments?['energy-kcal_100g'] as num?)?.toDouble() ?? 0.0;
+          final p100 =
+              (nutriments?['proteins_100g'] as num?)?.toDouble() ?? 0.0;
+          final cb100 =
+              (nutriments?['carbohydrates_100g'] as num?)?.toDouble() ?? 0.0;
+          final f100 = (nutriments?['fat_100g'] as num?)?.toDouble() ?? 0.0;
+
           return FoodNutritionInfo(
             name: product['product_name'] as String? ?? 'Unbekanntes Produkt',
-            calories: (nutriments?['energy-kcal_100g'] as num?)?.toInt() ?? 0,
-            protein: (nutriments?['proteins_100g'] as num?)?.toDouble() ?? 0.0,
-            carbs:
-                (nutriments?['carbohydrates_100g'] as num?)?.toDouble() ?? 0.0,
-            fat: (nutriments?['fat_100g'] as num?)?.toDouble() ?? 0.0,
+            // OFF usually gives per 100g, so total calories for "1 portion" is ambiguous unless quantity known.
+            // For now, assume 100g OR just use the 100g values as the "calculated" values for now.
+            // A better approach would be to check serving size.
+            calories: c100.toInt(),
+            protein: p100,
+            carbs: cb100,
+            fat: f100,
+            category: 'Gescannte Produkte',
+            caloriesPer100g: c100,
+            proteinPer100g: p100,
+            carbsPer100g: cb100,
+            fatPer100g: f100,
           );
         }
       }

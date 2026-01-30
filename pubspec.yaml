@@ -61,6 +61,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   sqflite_common_ffi_web: ^1.1.1
   image_picker: ^1.2.1
+  flutter_markdown: ^0.7.7+1
 
 dev_dependencies:
   flutter_test:

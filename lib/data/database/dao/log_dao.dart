@@ -22,6 +22,24 @@ class LogDao {
     return maps.map((map) => FoodEntry.fromMap(map)).toList();
   }
 
+  Future<List<FoodEntry>> getFoodEntriesForDateRange(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final db = await _appDatabase.database;
+    final startString = start.toIso8601String().split('T')[0];
+    final endString = end.toIso8601String().split('T')[0];
+
+    final maps = await db.query(
+      'food_entries',
+      where: 'date >= ? AND date <= ?',
+      whereArgs: [startString, endString],
+      orderBy: 'date ASC',
+    );
+
+    return maps.map((map) => FoodEntry.fromMap(map)).toList();
+  }
+
   Future<void> insertFoodEntry(FoodEntry entry) async {
     final db = await _appDatabase.database;
     await db.insert(
@@ -56,6 +74,24 @@ class LogDao {
       'activity_entries',
       where: 'date = ?',
       whereArgs: [dateString],
+    );
+
+    return maps.map((map) => ActivityEntry.fromMap(map)).toList();
+  }
+
+  Future<List<ActivityEntry>> getActivityEntriesForDateRange(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final db = await _appDatabase.database;
+    final startString = start.toIso8601String().split('T')[0];
+    final endString = end.toIso8601String().split('T')[0];
+
+    final maps = await db.query(
+      'activity_entries',
+      where: 'date >= ? AND date <= ?',
+      whereArgs: [startString, endString],
+      orderBy: 'date ASC',
     );
 
     return maps.map((map) => ActivityEntry.fromMap(map)).toList();

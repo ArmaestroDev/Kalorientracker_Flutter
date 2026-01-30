@@ -1,40 +1,46 @@
-import '../database/dao/log_dao.dart';
 import '../models/food_entry.dart';
 import '../models/activity_entry.dart';
+import '../models/food_item.dart';
+import '../database/dao/log_dao.dart';
+import '../database/dao/food_item_dao.dart';
 
-/// Repository for managing food and activity log entries
 class LogRepository {
   final LogDao _logDao = LogDao();
+  final FoodItemDao _foodItemDao = FoodItemDao();
 
-  Future<List<FoodEntry>> getFoodEntriesForDate(DateTime date) {
-    return _logDao.getFoodEntriesForDate(date);
-  }
+  // Food Entries
+  Future<List<FoodEntry>> getFoodEntriesForDate(DateTime date) =>
+      _logDao.getFoodEntriesForDate(date);
+  Future<List<FoodEntry>> getFoodEntriesForDateRange(
+    DateTime start,
+    DateTime end,
+  ) => _logDao.getFoodEntriesForDateRange(start, end);
+  Future<void> addFoodEntry(FoodEntry entry) => _logDao.insertFoodEntry(entry);
+  Future<void> updateFoodEntry(FoodEntry entry) =>
+      _logDao.updateFoodEntry(entry);
+  Future<void> deleteFoodEntry(FoodEntry entry) =>
+      _logDao.deleteFoodEntry(entry);
 
-  Future<List<ActivityEntry>> getActivityEntriesForDate(DateTime date) {
-    return _logDao.getActivityEntriesForDate(date);
-  }
+  // Activity Entries
+  Future<List<ActivityEntry>> getActivityEntriesForDate(DateTime date) =>
+      _logDao.getActivityEntriesForDate(date);
+  Future<List<ActivityEntry>> getActivityEntriesForDateRange(
+    DateTime start,
+    DateTime end,
+  ) => _logDao.getActivityEntriesForDateRange(start, end);
+  Future<void> addActivityEntry(ActivityEntry entry) =>
+      _logDao.insertActivityEntry(entry);
+  Future<void> updateActivityEntry(ActivityEntry entry) =>
+      _logDao.updateActivityEntry(entry);
+  Future<void> deleteActivityEntry(ActivityEntry entry) =>
+      _logDao.deleteActivityEntry(entry);
 
-  Future<void> addFoodEntry(FoodEntry entry) {
-    return _logDao.insertFoodEntry(entry);
-  }
-
-  Future<void> addActivityEntry(ActivityEntry entry) {
-    return _logDao.insertActivityEntry(entry);
-  }
-
-  Future<void> updateFoodEntry(FoodEntry entry) {
-    return _logDao.updateFoodEntry(entry);
-  }
-
-  Future<void> updateActivityEntry(ActivityEntry entry) {
-    return _logDao.updateActivityEntry(entry);
-  }
-
-  Future<void> deleteFoodEntry(FoodEntry entry) {
-    return _logDao.deleteFoodEntry(entry);
-  }
-
-  Future<void> deleteActivityEntry(ActivityEntry entry) {
-    return _logDao.deleteActivityEntry(entry);
-  }
+  // Food Items (History/Database)
+  Future<void> saveFoodItem(FoodItem item) => _foodItemDao.insertOrUpdate(item);
+  Future<List<FoodItem>> getRecentFoodItems() => _foodItemDao.getRecents();
+  Future<List<FoodItem>> searchFoodItems(String query) =>
+      _foodItemDao.searchFoods(query);
+  Future<List<String>> getFoodCategories() => _foodItemDao.getAllCategories();
+  Future<List<FoodItem>> getFoodItemsByCategory(String category) =>
+      _foodItemDao.getByCategory(category);
 }

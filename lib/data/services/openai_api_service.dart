@@ -12,7 +12,7 @@ class OpenAiApiService implements GenerativeService {
   OpenAiApiService(this._apiKey);
 
   @override
-  Future<String?> getApiResponse(String prompt) async {
+  Future<String?> getApiResponse(String prompt, {bool forceJson = true}) async {
     try {
       final response = await http
           .post(

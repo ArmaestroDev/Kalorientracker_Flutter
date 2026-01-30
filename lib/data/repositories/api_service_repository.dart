@@ -139,6 +139,23 @@ class ApiServiceRepository {
     }
   }
 
+  /// Analyze diet based on provided prompt
+  Future<String?> analyzeDiet(String prompt) async {
+    if (_apiService == null) return null;
+
+    try {
+      // Explicitly request non-JSON (text) response
+      final response = await _apiService!.getApiResponse(
+        prompt,
+        forceJson: false,
+      );
+      return response;
+    } catch (e) {
+      print('AiAnalysisError: Error fetching analysis: $e');
+      return null;
+    }
+  }
+
   String _cleanJsonString(String response) {
     var clean = response.trim();
     if (clean.startsWith('```json')) {
@@ -156,14 +173,27 @@ class ApiServiceRepository {
     return '''
 You are a nutrition analysis assistant. Respond ONLY with a valid JSON object.
 The JSON object must have this exact structure:
-{"name": "string", "calories": integer, "protein": double, "carbs": double, "fat": double}
+{
+  "name": "string", 
+  "calories": integer, 
+  "protein": double, 
+  "carbs": double, 
+  "fat": double,
+  "category": "string",
+  "calories_100g": double,
+  "protein_100g": double,
+  "carbs_100g": double,
+  "fat_100g": double
+}
 
 RULES:
-1. NEVER respond with anything other than the JSON object. Do not add text like "Here is the JSON:".
-2. If the input is not a food, return a JSON object with all values set to 0, e.g., {"name": "Unknown", "calories": 0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}.
+1. NEVER respond with anything other than the JSON object.
+2. If the input is not a food, return a JSON object with values set to 0.
 3. Capitalize the name of the food in the 'name' field.
-4. The "name" string for the json object that you return should be in the german language.
-5. IMPORTANT: Include specific details like quantity, brand, or type in the 'name' if provided (e.g., "500g Steak" instead of just "Steak").
+4. The "name" and "category" strings should be in German.
+5. "category" should be a general food category (e.g. "Obst", "Fleisch", "Süßigkeiten").
+6. IMPORTANT: Provide BOTH the total nutritional values for the user's portion AND the values per 100g.
+7. Include specific details like quantity in the 'name' (e.g., "500g Steak").
 
 USER INPUT:
 Food Name: "$foodName"
@@ -186,7 +216,7 @@ Your Response:
 
 RULES:
 1. NEVER respond with anything other than the JSON object.
-2. If the input is not a recognizable activity, return a JSON object with calories_burned set to 0. e.g. {"name": "Unknown Activity", "calories_burned": 0}.
+2. If the input is not a recognizable activity, return a JSON object with calories_burned set to 0.
 3. Capitalize the name of the activity in the 'name' field.
 4. The "name" string for the json object that you return should be in the german language.
 5. IMPORTANT: Include duration or intensity in the 'name' if provided (e.g., "30 Min Joggen" instead of just "Joggen").
@@ -201,7 +231,20 @@ Activity: "$activityName"
 You are a smart classification assistant. Your task is to determine if the user input describes a FOOD/MEAL or an ACTIVITY/EXERCISE.
 
 Respond ONLY with a valid JSON object with this structure:
-- If it's a FOOD: {"type": "food", "name": "string", "calories": integer, "protein": double, "carbs": double, "fat": double}
+- If it's a FOOD: 
+{
+  "type": "food", 
+  "name": "string", 
+  "calories": integer, 
+  "protein": double, 
+  "carbs": double, 
+  "fat": double,
+  "category": "string",
+  "calories_100g": double,
+  "protein_100g": double,
+  "carbs_100g": double,
+  "fat_100g": double
+}
 - If it's an ACTIVITY: {"type": "activity", "name": "string", "calories_burned": integer}
 
 RULES:
@@ -209,17 +252,9 @@ RULES:
 2. Classify as "activity" if the input describes physical exercise, sports, walking, running, gym, etc.
 3. Classify as "food" if the input describes food, meals, drinks, snacks, etc.
 4. The "name" string should be in German language.
-5. If you cannot determine the type, default to "food" with 0 values.
-6. IMPORTANT: Include specific details like quantity, brand, duration, or intensity in the 'name' if provided by the user.
-   - Example: "500g Steak" -> name: "500g Steak" (NOT just "Steak")
-   - Example: "30 Min Joggen" -> name: "30 Min Joggen"
-   - Example: "Coca Cola Zero" -> name: "Coca Cola Zero"
-
-EXAMPLES:
-- "100g Hühnerbrust" -> food
-- "30 Minuten Joggen" -> activity
-- "Apfel mit Erdnussbutter" -> food
-- "1 Stunde Schwimmen" -> activity
+5. For FOOD, provide "category" (e.g. "Obst", "Gemüse") in German.
+6. For FOOD, provide normalized values per 100g in the *_100g fields.
+7. IMPORTANT: Include specific details like quantity, brand, duration, or intensity in the 'name' if provided by the user.
 
 USER INPUT:
 Input: "$input"
@@ -237,15 +272,26 @@ You are a nutrition analysis assistant. Analyze the food in this image and estim
 $descText
 
 Respond ONLY with a valid JSON object with this exact structure:
-{"name": "string", "calories": integer, "protein": double, "carbs": double, "fat": double}
+{
+  "name": "string", 
+  "calories": integer, 
+  "protein": double, 
+  "carbs": double, 
+  "fat": double,
+  "category": "string",
+  "calories_100g": double,
+  "protein_100g": double,
+  "carbs_100g": double,
+  "fat_100g": double
+}
 
 RULES:
 1. NEVER respond with anything other than the JSON object.
 2. Estimate the portion size visible in the image.
 3. The "name" string should be in German language.
-4. If you cannot identify the food, return {"name": "Unbekanntes Essen", "calories": 0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}.
-5. Be reasonably accurate but err on the side of providing a useful estimate.
-6. Include estimated quantity or distinctive features in the 'name' (e.g. "Teller Pasta Carbonara" or "2 Scheiben Toast").
+4. If you cannot identify the food, return a JSON with 0 values.
+5. Provide estimated "category" and "per 100g" values (normalized).
+6. Include estimated quantity or distinctive features in the 'name' (e.g. "Teller Pasta Carbonara").
 ''';
   }
 }

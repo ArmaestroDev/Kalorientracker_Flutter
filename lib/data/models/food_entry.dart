@@ -9,6 +9,9 @@ class FoodEntry {
   final int carbs;
   final int fat;
   final DateTime date;
+  final double? amount;
+  final String? unit;
+  final String? foodItemId;
 
   FoodEntry({
     String? id,
@@ -18,6 +21,9 @@ class FoodEntry {
     required this.carbs,
     required this.fat,
     required this.date,
+    this.amount,
+    this.unit,
+    this.foodItemId,
   }) : id = id ?? const Uuid().v4();
 
   FoodEntry copyWith({
@@ -28,6 +34,9 @@ class FoodEntry {
     int? carbs,
     int? fat,
     DateTime? date,
+    double? amount,
+    String? unit,
+    String? foodItemId,
   }) {
     return FoodEntry(
       id: id ?? this.id,
@@ -37,6 +46,9 @@ class FoodEntry {
       carbs: carbs ?? this.carbs,
       fat: fat ?? this.fat,
       date: date ?? this.date,
+      amount: amount ?? this.amount,
+      unit: unit ?? this.unit,
+      foodItemId: foodItemId ?? this.foodItemId,
     );
   }
 
@@ -48,7 +60,10 @@ class FoodEntry {
       'protein': protein,
       'carbs': carbs,
       'fat': fat,
-      'date': date.toIso8601String().split('T')[0], // Store only the date part
+      'date': date.toIso8601String().split('T')[0],
+      'amount': amount,
+      'unit': unit,
+      'food_item_id': foodItemId,
     };
   }
 
@@ -63,6 +78,9 @@ class FoodEntry {
       date: map['date'] != null
           ? DateTime.parse(map['date'] as String)
           : DateTime.now(),
+      amount: (map['amount'] as num?)?.toDouble(),
+      unit: map['unit'] as String?,
+      foodItemId: map['food_item_id'] as String?,
     );
   }
 }

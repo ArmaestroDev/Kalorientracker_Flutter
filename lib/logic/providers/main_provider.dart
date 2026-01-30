@@ -13,6 +13,8 @@ import '../../data/services/claude_api_service.dart';
 import '../../data/services/openai_api_service.dart';
 import '../../data/services/grok_api_service.dart';
 import '../../data/services/food_api_service.dart';
+import '../../data/models/food_item.dart';
+import '../../data/models/ai_analysis_type.dart';
 import '../goals_calculator.dart';
 
 /// Main state provider for the Kalorientracker app
@@ -156,6 +158,9 @@ class MainProvider extends ChangeNotifier {
       );
 
       if (nutritionInfo != null && nutritionInfo.calories > 0) {
+        // Save to DB History
+        await _saveFoodItemToHistory(nutritionInfo);
+
         final newEntry = FoodEntry(
           name: nutritionInfo.name,
           calories: nutritionInfo.calories,
@@ -163,6 +168,8 @@ class MainProvider extends ChangeNotifier {
           carbs: nutritionInfo.carbs.toInt(),
           fat: nutritionInfo.fat.toInt(),
           date: _selectedDate,
+          // Assuming AI gives us the total values, we might not always know exact gram amount
+          // unless parsed from name. But we stored normalized values for next time.
         );
         await _logRepository.addFoodEntry(newEntry);
         await _loadEntriesForDate(_selectedDate);
@@ -176,6 +183,26 @@ class MainProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  Future<void> _saveFoodItemToHistory(FoodNutritionInfo info) async {
+    // Only save if we have normalized data
+    if (info.caloriesPer100g != null) {
+      // Use name as ID for now to avoid duplicates, or generate simple hash
+      final id = info.name.toLowerCase().trim().replaceAll(RegExp(r'\s+'), '_');
+
+      final item = FoodItem(
+        id: id,
+        name: info.name,
+        category: info.category ?? 'Allgemein',
+        caloriesPer100g: info.caloriesPer100g!,
+        proteinPer100g: info.proteinPer100g ?? 0,
+        carbsPer100g: info.carbsPer100g ?? 0,
+        fatPer100g: info.fatPer100g ?? 0,
+        lastUsed: DateTime.now(),
+      );
+      await _logRepository.saveFoodItem(item);
+    }
   }
 
   /// Fetch food info by barcode
@@ -205,6 +232,9 @@ class MainProvider extends ChangeNotifier {
 
   /// Add scanned food item with gram weight
   Future<void> addScannedFoodItem(FoodNutritionInfo foodInfo, int grams) async {
+    // Save to history
+    await _saveFoodItemToHistory(foodInfo);
+
     final factor = grams / 100.0;
     final newEntry = FoodEntry(
       name: '${foodInfo.name} (${grams}g)',
@@ -213,11 +243,77 @@ class MainProvider extends ChangeNotifier {
       carbs: (foodInfo.carbs * factor).toInt(),
       fat: (foodInfo.fat * factor).toInt(),
       date: _selectedDate,
+      amount: grams.toDouble(),
+      unit: 'g',
     );
 
     await _logRepository.addFoodEntry(newEntry);
     await _loadEntriesForDate(_selectedDate);
     notifyListeners();
+  }
+
+  /// Add food item from history with specific amount (smart scaling)
+  Future<void> addFoodItemFromHistory(
+    FoodItem item,
+    double amount,
+    String unit,
+  ) async {
+    // Update last used timestamp
+    final updatedItem = FoodItem(
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      caloriesPer100g: item.caloriesPer100g,
+      proteinPer100g: item.proteinPer100g,
+      carbsPer100g: item.carbsPer100g,
+      fatPer100g: item.fatPer100g,
+      defaultUnit: unit,
+      lastUsed: DateTime.now(),
+    );
+    await _logRepository.saveFoodItem(updatedItem);
+
+    // Calculate values (assuming unit is 'g' or similar weight-based for now)
+    // If unit is 'g' or 'ml', factor is amount / 100.
+    // If unit is 'Stk' (piece), we might need piece weight. For now assume gram-based logic is primary.
+    double factor = amount / 100.0;
+    if (unit != 'g' && unit != 'ml') {
+      // Fallback or specific logic for pieces if we stored piece weight.
+      // For simple MVP we assume user inputs grams if DB stores per 100g.
+    }
+
+    final newEntry = FoodEntry(
+      name: item.name,
+      calories: (item.caloriesPer100g * factor).toInt(),
+      protein: (item.proteinPer100g * factor).toInt(),
+      carbs: (item.carbsPer100g * factor).toInt(),
+      fat: (item.fatPer100g * factor).toInt(),
+      date: _selectedDate,
+      amount: amount,
+      unit: unit,
+      foodItemId: item.id,
+    );
+
+    await _logRepository.addFoodEntry(newEntry);
+    await _loadEntriesForDate(_selectedDate);
+    notifyListeners();
+  }
+
+  // --- Food Database Accessors ---
+
+  Future<List<FoodItem>> getRecentFoodItems() {
+    return _logRepository.getRecentFoodItems();
+  }
+
+  Future<List<FoodItem>> searchFoodItems(String query) {
+    return _logRepository.searchFoodItems(query);
+  }
+
+  Future<List<String>> getFoodCategories() {
+    return _logRepository.getFoodCategories();
+  }
+
+  Future<List<FoodItem>> getFoodItemsByCategory(String category) {
+    return _logRepository.getFoodItemsByCategory(category);
   }
 
   void clearScannedFoodInfo() {
@@ -276,6 +372,8 @@ class MainProvider extends ChangeNotifier {
       } else if (unifiedEntry.isFood && unifiedEntry.foodInfo != null) {
         final foodInfo = unifiedEntry.foodInfo!;
         if (foodInfo.calories > 0) {
+          await _saveFoodItemToHistory(foodInfo);
+
           final newEntry = FoodEntry(
             name: foodInfo.name,
             calories: foodInfo.calories,
@@ -331,6 +429,8 @@ class MainProvider extends ChangeNotifier {
       );
 
       if (foodInfo != null && foodInfo.calories > 0) {
+        await _saveFoodItemToHistory(foodInfo);
+
         final newEntry = FoodEntry(
           name: foodInfo.name,
           calories: foodInfo.calories,
@@ -471,5 +571,129 @@ class MainProvider extends ChangeNotifier {
   void dismissError() {
     _errorMessage = null;
     notifyListeners();
+  }
+
+  /// Perform AI Analysis based on selected type
+  Future<String?> performAiAnalysis(AiAnalysisType type) async {
+    if (_isApiKeyMissing()) return null;
+
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      DateTime start;
+      DateTime end;
+      String analysisContext;
+
+      // Determine date range and context
+      final now = DateTime.now();
+      switch (type) {
+        case AiAnalysisType.dayReview:
+        case AiAnalysisType.nextMeal:
+          start = DateTime(now.year, now.month, now.day);
+          end = start;
+          analysisContext = type == AiAnalysisType.dayReview
+              ? "Daily Review: Summarize the day's nutrition and activity."
+              : "Next Meal Suggestion: Suggest a healthy next meal based on remaining calories and macros.";
+          break;
+        case AiAnalysisType.weekReview:
+          start = now.subtract(const Duration(days: 7));
+          end = now;
+          analysisContext =
+              "Weekly Review: Analyze the nutrition and activity trends over the last week.";
+          break;
+        case AiAnalysisType.monthReview:
+          start = now.subtract(const Duration(days: 30));
+          end = now;
+          analysisContext =
+              "Monthly Review: Analyze the nutrition and activity trends over the last month.";
+          break;
+        case AiAnalysisType.yearReview:
+          start = now.subtract(const Duration(days: 365));
+          end = now;
+          analysisContext =
+              "Yearly Review: Analyze the nutrition and activity trends over the last year.";
+          break;
+        default:
+          // Fallback for safety
+          start = DateTime(now.year, now.month, now.day);
+          end = start;
+          analysisContext = "Daily Review";
+          break;
+      }
+
+      // Fetch data
+      List<FoodEntry> foods;
+      List<ActivityEntry> activities;
+
+      if (start == end) {
+        // Optimization for single day (though range would work efficiently too)
+        foods = await _logRepository.getFoodEntriesForDate(start);
+        activities = await _logRepository.getActivityEntriesForDate(start);
+      } else {
+        foods = await _logRepository.getFoodEntriesForDateRange(start, end);
+        activities = await _logRepository.getActivityEntriesForDateRange(
+          start,
+          end,
+        );
+      }
+
+      // Build prompt
+      final sb = StringBuffer();
+      sb.writeln(analysisContext);
+      sb.writeln(
+        "User Profile: $_userProfile",
+      ); // Ensure toString() is meaningful
+      sb.writeln("Goals: $_goals");
+      sb.writeln(
+        "Data Period: ${start.toIso8601String()} to ${end.toIso8601String()}",
+      );
+      sb.writeln("\nFood Entires:");
+      if (foods.isEmpty) {
+        sb.writeln("No food entries recorded.");
+      } else {
+        for (var f in foods) {
+          sb.writeln(
+            "- ${f.date.toIso8601String().split('T')[0]}: ${f.name} (${f.calories} kcal, P:${f.protein}g, C:${f.carbs}g, F:${f.fat}g)",
+          );
+        }
+      }
+
+      sb.writeln("\nActivity Entries:");
+      if (activities.isEmpty) {
+        sb.writeln("No activity entries recorded.");
+      } else {
+        for (var a in activities) {
+          sb.writeln(
+            "- ${a.date.toIso8601String().split('T')[0]}: ${a.name} (${a.caloriesBurned} kcal)",
+          );
+        }
+      }
+
+      sb.writeln("\nInstructions:");
+      sb.writeln("1. Be encouraging and helpful.");
+      sb.writeln("2. Highlight positives and suggest improvements.");
+      sb.writeln("3. Keep it concise but informative.");
+      sb.writeln("4. Use Markdown formatting.");
+      sb.writeln("5. Respond in German.");
+
+      final prompt = sb.toString();
+
+      final result = await _apiServiceRepository.analyzeDiet(prompt);
+
+      if (result == null) {
+        _errorMessage = "Die Analyse konnte nicht erstellt werden.";
+      }
+
+      _isLoading = false;
+      notifyListeners();
+      return result;
+    } catch (e) {
+      _errorMessage = 'Fehler bei der Analyse: $e';
+      _isLoading = false;
+      notifyListeners();
+      return null;
+    }
   }
 }

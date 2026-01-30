@@ -13,7 +13,10 @@ import '../widgets/dialogs/unified_input_dialog.dart';
 import '../widgets/dialogs/edit_food_dialog.dart';
 import '../widgets/dialogs/edit_activity_dialog.dart';
 import '../widgets/dialogs/barcode_scanner_dialog.dart';
+import '../widgets/dialogs/ai_assistant_dialog.dart';
 import '../widgets/dialogs/delete_confirmation_dialog.dart';
+import '../widgets/dialogs/food_recall_dialog.dart';
+import '../../data/models/food_item.dart';
 import 'profile_screen.dart';
 import 'photo_input_screen.dart';
 
@@ -39,7 +42,68 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) => AddEntryDialog(
         onPhotoSelected: _openPhotoInput,
         onManualSelected: _showUnifiedInputDialog,
+        onHistorySelected: _showFoodRecallDialog,
       ),
+    );
+  }
+
+  void _showFoodRecallDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => FoodRecallDialog(
+        onItemSelected: (FoodItem item) {
+          _showSmartScalingDialog(item);
+        },
+      ),
+    );
+  }
+
+  void _showSmartScalingDialog(FoodItem item) {
+    final TextEditingController amountController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('${item.name} hinzufügen'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Standard: ${item.caloriesPer100g.toInt()} kcal pro 100g'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: amountController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Menge (g/ml)',
+                  border: OutlineInputBorder(),
+                  suffixText: 'g',
+                ),
+                autofocus: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final amount = double.tryParse(amountController.text);
+                if (amount != null && amount > 0) {
+                  context.read<MainProvider>().addFoodItemFromHistory(
+                    item,
+                    amount,
+                    'g',
+                  );
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Hinzufügen'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -400,9 +464,36 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: _showAddEntryDialog,
-            child: const Icon(Icons.add),
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerFloat,
+          floatingActionButton: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                FloatingActionButton(
+                  heroTag: 'ai_assistant_fab',
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => const AiAssistantDialog(),
+                    );
+                  },
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.tertiaryContainer,
+                  foregroundColor: Theme.of(
+                    context,
+                  ).colorScheme.onTertiaryContainer,
+                  child: const Icon(Icons.auto_awesome_outlined),
+                ),
+                FloatingActionButton(
+                  heroTag: 'add_entry_fab',
+                  onPressed: _showAddEntryDialog,
+                  child: const Icon(Icons.add),
+                ),
+              ],
+            ),
           ),
         );
       },
