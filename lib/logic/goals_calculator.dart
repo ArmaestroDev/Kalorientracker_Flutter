@@ -37,10 +37,6 @@ class GoalsCalculator {
     // 3. Calculate Total Daily Energy Expenditure (TDEE)
     final tdee = bmr * profile.activityLevel.multiplier;
 
-    double proteinGoalGramsLoseWeight = 2.0 * profile.weightKg;
-    double proteinGoalGramsGainWeight = 1.5 * profile.weightKg;
-    double proteinGoalGramsMaintainWeight = 1.7 * profile.weightKg;
-
     // 4. Calculate Target Calories
     int targetCalories = (tdee + profile.goal.calorieModifier).round();
 
