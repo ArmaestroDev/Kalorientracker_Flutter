@@ -301,8 +301,13 @@ class MainProvider extends ChangeNotifier {
       factor = amount / 100.0;
     }
 
+    // Build display name with amount
+    final displayName = (unit == 'Portion' || unit == 'Stk')
+        ? '${item.name} (${amount.toInt()} $unit)'
+        : '${item.name} (${amount.toInt()}$unit)';
+
     final newEntry = FoodEntry(
-      name: item.name,
+      name: displayName,
       calories: (item.caloriesPer100g * factor).toInt(),
       protein: (item.proteinPer100g * factor).toInt(),
       carbs: (item.carbsPer100g * factor).toInt(),
