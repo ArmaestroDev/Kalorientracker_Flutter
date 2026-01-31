@@ -37,6 +37,10 @@ class GoalsCalculator {
     // 3. Calculate Total Daily Energy Expenditure (TDEE)
     final tdee = bmr * profile.activityLevel.multiplier;
 
+    double proteinGoalGramsLoseWeight = 2.0 * profile.weightKg;
+    double proteinGoalGramsGainWeight = 1.5 * profile.weightKg;
+    double proteinGoalGramsMaintainWeight = 1.7 * profile.weightKg;
+
     // 4. Calculate Target Calories
     int targetCalories = (tdee + profile.goal.calorieModifier).round();
 
@@ -55,39 +59,40 @@ class GoalsCalculator {
     }
 
     // 6. Calculate Macronutrients based on Goal
-    // Ratios change based on physiological needs of the goal.
-    double proteinRatio;
+    // Protein is calculated as grams per kg body weight (more accurate than %)
+    // Fat remains ratio-based, carbs fill the remaining calories.
+
+    double proteinGoalGrams;
     double fatRatio;
-    // Carbs will be the remainder to ensure 100% sum.
 
     switch (profile.goal) {
       case FitnessGoal.loseWeight:
         // High protein for satiety & muscle retention during deficit
-        proteinRatio = 0.40;
+        proteinGoalGrams = 2.0 * profile.weightKg;
         fatRatio = 0.30;
         break;
       case FitnessGoal.gainWeight:
         // Moderate protein, higher carbs for training fuel
-        proteinRatio = 0.30;
+        proteinGoalGrams = 1.5 * profile.weightKg;
         fatRatio = 0.25;
         break;
       case FitnessGoal.maintainWeight:
         // Balanced approach
-        proteinRatio = 0.30;
+        proteinGoalGrams = 1.7 * profile.weightKg;
         fatRatio = 0.30;
         break;
     }
 
-    // 7. Calculate Grams (Handling Rounding Precision)
-    // We calculate Protein and Fat first, then assign remaining calories to Carbs.
-    // This prevents the "1995 vs 2000" calorie mismatch bug.
+    // 7. Calculate Grams
+    // Protein is fixed by body weight, fat by ratio, carbs fill the rest.
+    final int proteinGrams = proteinGoalGrams.round();
+    final int proteinCalories = proteinGrams * _calPerGramProtein;
 
-    final int proteinCalories = (targetCalories * proteinRatio).round();
     final int fatCalories = (targetCalories * fatRatio).round();
-    final int carbCalories = targetCalories - (proteinCalories + fatCalories);
-
-    final int proteinGrams = (proteinCalories / _calPerGramProtein).round();
     final int fatGrams = (fatCalories / _calPerGramFat).round();
+
+    // Carbs get the remaining calories
+    final int carbCalories = targetCalories - (proteinCalories + fatCalories);
     final int carbsGrams = (carbCalories / _calPerGramCarb).round();
 
     return CalorieGoals(

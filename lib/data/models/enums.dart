@@ -19,7 +19,7 @@ enum ActivityLevel {
 }
 
 enum FitnessGoal {
-  loseWeight(-500, 'Gewicht verlieren (-400 kcal Defizit)'),
+  loseWeight(-500, 'Gewicht verlieren (-500 kcal Defizit)'),
   maintainWeight(0, 'Gewicht halten'),
   gainWeight(500, 'Gewicht zunehmen (+500 kcal Überschuss)');
 
