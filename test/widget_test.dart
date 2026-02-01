@@ -7,7 +7,6 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:kalorientracker_flutter/main.dart';
 
 void main() {
   testWidgets('App loads successfully', (WidgetTester tester) async {
