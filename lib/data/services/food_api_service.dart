@@ -9,7 +9,9 @@ class FoodNutritionInfo {
   final double carbs;
   final double fat;
 
-  // Normalized values for DB
+  final double? amount;
+  final String? unit;
+
   final String? category;
   final double? caloriesPer100g;
   final double? proteinPer100g;
@@ -22,6 +24,8 @@ class FoodNutritionInfo {
     required this.protein,
     required this.carbs,
     required this.fat,
+    this.amount,
+    this.unit,
     this.category,
     this.caloriesPer100g,
     this.proteinPer100g,
@@ -36,12 +40,23 @@ class FoodNutritionInfo {
       protein: (json['protein'] as num?)?.toDouble() ?? 0.0,
       carbs: (json['carbs'] as num?)?.toDouble() ?? 0.0,
       fat: (json['fat'] as num?)?.toDouble() ?? 0.0,
+      amount: (json['amount'] as num?)?.toDouble(),
+      unit: _normalizeUnit(json['unit'] as String?),
       category: json['category'] as String?,
       caloriesPer100g: (json['calories_100g'] as num?)?.toDouble(),
       proteinPer100g: (json['protein_100g'] as num?)?.toDouble(),
       carbsPer100g: (json['carbs_100g'] as num?)?.toDouble(),
       fatPer100g: (json['fat_100g'] as num?)?.toDouble(),
     );
+  }
+
+  static String? _normalizeUnit(String? unit) {
+    final value = unit?.trim().toLowerCase();
+    if (value == null || value.isEmpty) return null;
+    if (value == 'g' || value.startsWith('gramm')) return 'g';
+    if (value == 'ml' || value.startsWith('milliliter')) return 'ml';
+    if (value.startsWith('stk') || value.startsWith('stück')) return 'Stk';
+    return 'Portion';
   }
 }
 

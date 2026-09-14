@@ -6,6 +6,7 @@ class UserProfile {
   final String claudeApiKey;
   final String openaiApiKey;
   final String grokApiKey;
+  final Map<AiProvider, String> modelOverrides;
   final AiProvider selectedProvider;
   final int age;
   final double weightKg;
@@ -15,12 +16,14 @@ class UserProfile {
   final ActivityLevel activityLevel;
   final FitnessGoal goal;
   final bool eatBackActivityCalories;
+  final String aboutMe;
 
   const UserProfile({
     this.geminiApiKey = '',
     this.claudeApiKey = '',
     this.openaiApiKey = '',
     this.grokApiKey = '',
+    this.modelOverrides = const {},
     this.selectedProvider = AiProvider.gemini,
     this.age = 0,
     this.weightKg = 0.0,
@@ -30,15 +33,29 @@ class UserProfile {
     this.activityLevel = ActivityLevel.sedentary,
     this.goal = FitnessGoal.maintainWeight,
     this.eatBackActivityCalories = false,
+    this.aboutMe = '',
   });
 
   bool get hasBodyData => age > 0 && weightKg > 0 && heightCm > 0;
+
+  String apiKeyFor(AiProvider provider) => switch (provider) {
+    AiProvider.gemini => geminiApiKey,
+    AiProvider.claude => claudeApiKey,
+    AiProvider.openai => openaiApiKey,
+    AiProvider.grok => grokApiKey,
+  };
+
+  String modelFor(AiProvider provider) {
+    final override = modelOverrides[provider]?.trim() ?? '';
+    return override.isEmpty ? provider.defaultModel : override;
+  }
 
   UserProfile copyWith({
     String? geminiApiKey,
     String? claudeApiKey,
     String? openaiApiKey,
     String? grokApiKey,
+    Map<AiProvider, String>? modelOverrides,
     AiProvider? selectedProvider,
     int? age,
     double? weightKg,
@@ -48,12 +65,14 @@ class UserProfile {
     ActivityLevel? activityLevel,
     FitnessGoal? goal,
     bool? eatBackActivityCalories,
+    String? aboutMe,
   }) {
     return UserProfile(
       geminiApiKey: geminiApiKey ?? this.geminiApiKey,
       claudeApiKey: claudeApiKey ?? this.claudeApiKey,
       openaiApiKey: openaiApiKey ?? this.openaiApiKey,
       grokApiKey: grokApiKey ?? this.grokApiKey,
+      modelOverrides: modelOverrides ?? this.modelOverrides,
       selectedProvider: selectedProvider ?? this.selectedProvider,
       age: age ?? this.age,
       weightKg: weightKg ?? this.weightKg,
@@ -64,6 +83,7 @@ class UserProfile {
       goal: goal ?? this.goal,
       eatBackActivityCalories:
           eatBackActivityCalories ?? this.eatBackActivityCalories,
+      aboutMe: aboutMe ?? this.aboutMe,
     );
   }
 
@@ -78,12 +98,27 @@ class UserProfile {
         'Ziel: ${goal.description}';
   }
 
+  Map<String, dynamic> _modelOverridesToJson() => {
+    for (final entry in modelOverrides.entries)
+      if (entry.value.trim().isNotEmpty) entry.key.name: entry.value.trim(),
+  };
+
+  static Map<AiProvider, String> _modelOverridesFromJson(Object? json) {
+    if (json is! Map) return const {};
+    return {
+      for (final provider in AiProvider.values)
+        if (json[provider.name] is String)
+          provider: json[provider.name] as String,
+    };
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'geminiApiKey': geminiApiKey,
       'claudeApiKey': claudeApiKey,
       'openaiApiKey': openaiApiKey,
       'grokApiKey': grokApiKey,
+      'modelOverrides': _modelOverridesToJson(),
       'selectedProvider': selectedProvider.index,
       'age': age,
       'weightKg': weightKg,
@@ -93,6 +128,7 @@ class UserProfile {
       'activityLevel': activityLevel.index,
       'goal': goal.name,
       'eatBackActivityCalories': eatBackActivityCalories,
+      'aboutMe': aboutMe,
     };
   }
 
@@ -102,6 +138,7 @@ class UserProfile {
       claudeApiKey: json['claudeApiKey'] as String? ?? '',
       openaiApiKey: json['openaiApiKey'] as String? ?? '',
       grokApiKey: json['grokApiKey'] as String? ?? '',
+      modelOverrides: _modelOverridesFromJson(json['modelOverrides']),
       selectedProvider:
           AiProvider.values[json['selectedProvider'] as int? ?? 0],
       age: json['age'] as int? ?? 0,
@@ -113,6 +150,7 @@ class UserProfile {
       goal: FitnessGoal.fromStored(json['goal']),
       eatBackActivityCalories:
           json['eatBackActivityCalories'] as bool? ?? false,
+      aboutMe: json['aboutMe'] as String? ?? '',
     );
   }
 }

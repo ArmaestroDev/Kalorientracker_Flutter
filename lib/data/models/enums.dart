@@ -1,7 +1,17 @@
 /// Enums used throughout the Kalorientracker app
 library;
 
-enum AiProvider { gemini, claude, openai, grok }
+enum AiProvider {
+  gemini('Gemini', 'gemini-3.8-flash'),
+  claude('Claude', 'claude-opus-5'),
+  openai('OpenAI', 'gpt-5.4-mini'),
+  grok('Grok', 'grok-4.6');
+
+  final String label;
+  final String defaultModel;
+
+  const AiProvider(this.label, this.defaultModel);
+}
 
 enum Gender { male, female }
 

@@ -221,9 +221,7 @@ class _MacroProgress extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         Text(
-          isMinimum && goal > current
-              ? '$current / ${goal}g · noch ${goal - current}g'
-              : '$current / ${goal}g',
+          '$current / ${goal}g',
           style: Theme.of(context).textTheme.labelSmall,
         ),
       ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../logic/providers/main_provider.dart';
 import '../../../data/models/food_item.dart';
+import '../app_text_field.dart';
 
 class FoodRecallDialog extends StatefulWidget {
   final Function(FoodItem) onItemSelected;
@@ -70,6 +71,13 @@ class _FoodRecallDialogState extends State<FoodRecallDialog>
     return _items.map((e) => e.category).toSet().toList()..sort();
   }
 
+  static String _unitLabel(FoodItem item) => switch (item.defaultUnit) {
+    'Portion' => 'pro Portion',
+    'Stk' => 'pro Stück',
+    'ml' => 'pro 100 ml',
+    _ => 'pro 100 g',
+  };
+
   Widget _buildHistoryList(List<FoodItem> items) {
     if (items.isEmpty) {
       return const Center(child: Text('Keine Einträge gefunden'));
@@ -81,7 +89,7 @@ class _FoodRecallDialogState extends State<FoodRecallDialog>
         return ListTile(
           title: Text(item.name),
           subtitle: Text(
-            '${item.caloriesPer100g.toInt()} kcal/100g • ${item.category}',
+            '${item.caloriesPer100g.round()} kcal ${_unitLabel(item)} · ${item.category}',
           ),
           trailing: const Icon(Icons.add_circle_outline),
           onTap: () {
@@ -170,13 +178,9 @@ class _FoodRecallDialogState extends State<FoodRecallDialog>
               ],
             ),
             const SizedBox(height: 16),
-            TextField(
+            AppTextField(
               controller: _searchController,
-              decoration: const InputDecoration(
-                hintText: 'Suche nach Essen...',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
+              hint: 'Suche nach Essen …',
               onChanged: _searchItems,
             ),
             const SizedBox(height: 16),
@@ -188,16 +192,10 @@ class _FoodRecallDialogState extends State<FoodRecallDialog>
                   children: [
                     TabBar(
                       controller: _tabController,
-                      labelColor: Colors.white,
-                      unselectedLabelColor: Colors.white70,
                       tabs: const [
                         Tab(text: 'Verlauf'),
                         Tab(text: 'Kategorien'),
                       ],
-                      onTap: (index) {
-                        // Optional: reset category selection when switching tabs?
-                        // setState(() => _selectedCategory = null);
-                      },
                     ),
                     const SizedBox(height: 8),
                     Expanded(

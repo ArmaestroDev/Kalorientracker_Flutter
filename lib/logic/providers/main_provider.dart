@@ -1,21 +1,21 @@
 import 'package:flutter/foundation.dart';
 import '../../data/models/food_entry.dart';
 import '../../data/models/activity_entry.dart';
+import '../../data/models/chat_message.dart';
 import '../../data/models/user_profile.dart';
 import '../../data/models/calorie_goals.dart';
 import '../../data/models/enums.dart';
+import '../../data/models/food_item.dart';
+import '../../data/models/weight_entry.dart';
 import '../../data/repositories/log_repository.dart';
 import '../../data/repositories/user_preferences_repository.dart';
 import '../../data/repositories/api_service_repository.dart';
 import '../../data/services/generative_service.dart';
 import '../../data/services/gemini_api_service.dart';
 import '../../data/services/claude_api_service.dart';
-import '../../data/services/openai_api_service.dart';
-import '../../data/services/grok_api_service.dart';
+import '../../data/services/openai_compatible_service.dart';
 import '../../data/services/food_api_service.dart';
-import '../../data/models/food_item.dart';
-import '../../data/models/ai_analysis_type.dart';
-import '../../data/models/weight_entry.dart';
+import '../assistant_context_builder.dart';
 import '../goals_calculator.dart';
 
 /// Main state provider for the Kalorientracker app
@@ -51,6 +51,8 @@ class MainProvider extends ChangeNotifier {
   List<WeightEntry> _weightEntries = [];
   List<FoodEntry> _weekFoodEntries = [];
   List<ActivityEntry> _weekActivityEntries = [];
+  List<ChatMessage> _assistantMessages = [];
+  bool _assistantBusy = false;
 
   // Getters
   DateTime get selectedDate => _selectedDate;
@@ -62,6 +64,9 @@ class MainProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   FoodNutritionInfo? get scannedFoodInfo => _scannedFoodInfo;
   String get currentTheme => _currentTheme;
+  List<ChatMessage> get assistantMessages =>
+      List.unmodifiable(_assistantMessages);
+  bool get assistantBusy => _assistantBusy;
 
   // Computed values
   int get totalCalories => _foodEntries.fold(0, (sum, e) => sum + e.calories);
@@ -124,6 +129,10 @@ class MainProvider extends ChangeNotifier {
     return values.reduce((a, b) => a + b) / values.length;
   }
 
+  double? get _bodyWeightForEstimates =>
+      weightAverage7Days ??
+      (_userProfile.weightKg > 0 ? _userProfile.weightKg : null);
+
   static String _dayKey(DateTime d) => d.toIso8601String().split('T')[0];
 
   static int _scale(double value, double factor) => (value * factor).round();
@@ -141,6 +150,7 @@ class MainProvider extends ChangeNotifier {
         await _prefsRepository.saveCalorieGoals(_goals);
       }
       _currentTheme = await _prefsRepository.loadTheme();
+      _assistantMessages = await _prefsRepository.loadChatHistory();
       _initializeApiService(_userProfile);
       await _loadEntriesForDate(_selectedDate);
     } catch (e) {
@@ -152,48 +162,51 @@ class MainProvider extends ChangeNotifier {
   }
 
   void _initializeApiService(UserProfile profile) {
-    GenerativeService service;
-    switch (profile.selectedProvider) {
-      case AiProvider.claude:
-        service = ClaudeApiService(profile.claudeApiKey);
-        break;
-      case AiProvider.openai:
-        service = OpenAiApiService(profile.openaiApiKey);
-        break;
-      case AiProvider.grok:
-        service = GrokApiService(profile.grokApiKey);
-        break;
-      case AiProvider.gemini:
-        service = GeminiApiService(profile.geminiApiKey);
-        break;
-    }
+    final provider = profile.selectedProvider;
+    final key = profile.apiKeyFor(provider).trim();
+    final model = profile.modelFor(provider);
+    final GenerativeService service = switch (provider) {
+      AiProvider.claude => ClaudeApiService(key, model),
+      AiProvider.openai => OpenAiCompatibleService.openAi(key, model),
+      AiProvider.grok => OpenAiCompatibleService.grok(key, model),
+      AiProvider.gemini => GeminiApiService(key, model),
+    };
     _apiServiceRepository.updateService(service);
   }
 
-  bool _isApiKeyMissing() {
-    bool isMissing = false;
-    switch (_userProfile.selectedProvider) {
-      case AiProvider.gemini:
-        isMissing = _userProfile.geminiApiKey.isEmpty;
-        break;
-      case AiProvider.claude:
-        isMissing = _userProfile.claudeApiKey.isEmpty;
-        break;
-      case AiProvider.openai:
-        isMissing = _userProfile.openaiApiKey.isEmpty;
-        break;
-      case AiProvider.grok:
-        isMissing = _userProfile.grokApiKey.isEmpty;
-        break;
-    }
+  String? get missingApiKeyMessage {
+    final provider = _userProfile.selectedProvider;
+    if (_userProfile.apiKeyFor(provider).trim().isNotEmpty) return null;
+    return 'Bitte gib zuerst deinen ${provider.label}-API-Schlüssel im Profil ein.';
+  }
 
-    if (isMissing) {
-      _errorMessage =
-          'Bitte gib zuerst deinen ${_userProfile.selectedProvider.name.toUpperCase()} API-Schlüssel im Profil ein.';
-      notifyListeners();
-      return true;
+  bool _isApiKeyMissing() {
+    final message = missingApiKeyMessage;
+    if (message == null) return false;
+    _errorMessage = message;
+    notifyListeners();
+    return true;
+  }
+
+  static String _errorText(Object error) {
+    if (error is AiException) return error.message;
+    return 'Unerwarteter Fehler: $error';
+  }
+
+  /// Runs an AI call behind the loading overlay and reports errors in the banner
+  Future<void> _runAiTask(Future<void> Function() task) async {
+    if (_isApiKeyMissing()) return;
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+    try {
+      await task();
+      await _loadEntriesForDate(_selectedDate);
+    } catch (e) {
+      _errorMessage = _errorText(e);
     }
-    return false;
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<void> _loadEntriesForDate(DateTime date) async {
@@ -255,84 +268,78 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Add a food item using AI to estimate nutrition
-  Future<void> addFoodItem(String foodName, String description) async {
-    if (_isApiKeyMissing()) return;
+  static String historyIdFor(String name) =>
+      name.toLowerCase().trim().replaceAll(RegExp(r'\s+'), '_');
 
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final nutritionInfo = await _apiServiceRepository.fetchFoodNutrition(
-        foodName,
-        description,
-      );
-
-      if (nutritionInfo != null && nutritionInfo.calories > 0) {
-        // Save to DB History
-        await _saveFoodItemToHistory(nutritionInfo);
-
-        final newEntry = FoodEntry(
-          name: nutritionInfo.name,
-          calories: nutritionInfo.calories,
-          protein: nutritionInfo.protein.round(),
-          carbs: nutritionInfo.carbs.round(),
-          fat: nutritionInfo.fat.round(),
-          date: _selectedDate,
-          // Assuming AI gives us the total values, we might not always know exact gram amount
-          // unless parsed from name. But we stored normalized values for next time.
-        );
-        await _logRepository.addFoodEntry(newEntry);
-        await _loadEntriesForDate(_selectedDate);
-      } else {
-        _errorMessage = 'Nährwertdaten konnten nicht abgerufen werden.';
-      }
-    } catch (e) {
-      // Show the actual error message to the user for debugging
-      _errorMessage = 'Fehler: ${e.toString().replaceAll('Exception: ', '')}';
-    }
-
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  Future<void> _saveFoodItemToHistory(FoodNutritionInfo info) async {
-    // Generate ID
-    final id = info.name.toLowerCase().trim().replaceAll(RegExp(r'\s+'), '_');
-
-    // Determine values to save
-    double c100, p100, cb100, f100;
-    String unit;
-
-    if (info.caloriesPer100g != null) {
-      c100 = info.caloriesPer100g!;
-      p100 = info.proteinPer100g ?? 0;
-      cb100 = info.carbsPer100g ?? 0;
-      f100 = info.fatPer100g ?? 0;
-      unit = 'g';
-    } else {
-      // Fallback: Save as "1 Portion" using the total values
-      c100 = info.calories.toDouble();
-      p100 = info.protein;
-      cb100 = info.carbs;
-      f100 = info.fat;
-      unit = 'Portion';
-    }
+  Future<String> _saveFoodItemToHistory(FoodNutritionInfo info) async {
+    final id = historyIdFor(info.name);
+    final hasPer100 = info.caloriesPer100g != null && info.caloriesPer100g! > 0;
+    final amount = info.amount;
+    final portions = amount != null && amount > 0 && !_isWeightUnit(info.unit)
+        ? amount
+        : 1.0;
 
     final item = FoodItem(
       id: id,
       name: info.name,
       category: info.category ?? 'Allgemein',
-      caloriesPer100g:
-          c100, // Represents per 100g OR per Portion depending on unit
-      proteinPer100g: p100,
-      carbsPer100g: cb100,
-      fatPer100g: f100,
-      defaultUnit: unit,
+      caloriesPer100g: hasPer100
+          ? info.caloriesPer100g!
+          : info.calories / portions,
+      proteinPer100g: hasPer100
+          ? (info.proteinPer100g ?? 0)
+          : info.protein / portions,
+      carbsPer100g: hasPer100
+          ? (info.carbsPer100g ?? 0)
+          : info.carbs / portions,
+      fatPer100g: hasPer100 ? (info.fatPer100g ?? 0) : info.fat / portions,
+      defaultUnit: hasPer100
+          ? (info.unit == 'ml' ? 'ml' : 'g')
+          : (info.unit == 'Stk' ? 'Stk' : 'Portion'),
       lastUsed: DateTime.now(),
     );
     await _logRepository.saveFoodItem(item);
+    return id;
+  }
+
+  static bool _isWeightUnit(String? unit) => unit == 'g' || unit == 'ml';
+
+  Future<void> _addFoodEntryFromInfo(FoodNutritionInfo info) async {
+    final historyId = await _saveFoodItemToHistory(info);
+    await _logRepository.addFoodEntry(
+      FoodEntry(
+        name: info.name,
+        calories: info.calories,
+        protein: info.protein.round(),
+        carbs: info.carbs.round(),
+        fat: info.fat.round(),
+        date: _selectedDate,
+        amount: info.amount,
+        unit: info.amount != null ? (info.unit ?? 'Portion') : null,
+        foodItemId: historyId,
+      ),
+    );
+  }
+
+  Future<void> _addActivityEntryFromInfo(ActivityInfo info) {
+    return _logRepository.addActivityEntry(
+      ActivityEntry(
+        name: info.name,
+        caloriesBurned: info.caloriesBurned,
+        date: _selectedDate,
+      ),
+    );
+  }
+
+  /// Add a food item using AI to estimate nutrition
+  Future<void> addFoodItem(String foodName, String description) {
+    return _runAiTask(() async {
+      final info = await _apiServiceRepository.fetchFoodNutrition(
+        foodName,
+        description,
+      );
+      await _addFoodEntryFromInfo(info);
+    });
   }
 
   /// Fetch food info by barcode
@@ -362,12 +369,11 @@ class MainProvider extends ChangeNotifier {
 
   /// Add scanned food item with gram weight
   Future<void> addScannedFoodItem(FoodNutritionInfo foodInfo, int grams) async {
-    // Save to history (will save as 100g based since barcode usually has it)
-    await _saveFoodItemToHistory(foodInfo);
+    final historyId = await _saveFoodItemToHistory(foodInfo);
 
     final factor = grams / 100.0;
     final newEntry = FoodEntry(
-      name: '${foodInfo.name} (${grams}g)',
+      name: foodInfo.name,
       calories: _scale(
         foodInfo.caloriesPer100g ?? foodInfo.calories.toDouble(),
         factor,
@@ -378,6 +384,7 @@ class MainProvider extends ChangeNotifier {
       date: _selectedDate,
       amount: grams.toDouble(),
       unit: 'g',
+      foodItemId: historyId,
     );
 
     await _logRepository.addFoodEntry(newEntry);
@@ -386,54 +393,38 @@ class MainProvider extends ChangeNotifier {
   }
 
   /// Add food item from history with specific amount (smart scaling)
-  Future<void> addFoodItemFromHistory(
-    FoodItem item,
-    double amount,
-    String unit,
-  ) async {
-    // Update last used timestamp
-    final updatedItem = FoodItem(
-      id: item.id,
-      name: item.name,
-      category: item.category,
-      caloriesPer100g: item.caloriesPer100g,
-      proteinPer100g: item.proteinPer100g,
-      carbsPer100g: item.carbsPer100g,
-      fatPer100g: item.fatPer100g,
-      defaultUnit:
-          unit, // Remember last used unit? Maybe keep original default.
-      lastUsed: DateTime.now(),
-    );
-    await _logRepository.saveFoodItem(updatedItem);
+  Future<void> addFoodItemFromHistory(FoodItem item, double amount) async {
+    final unit = item.defaultUnit.isEmpty ? 'g' : item.defaultUnit;
+    final isPerUnit = unit == 'Portion' || unit == 'Stk';
+    final factor = isPerUnit ? amount : amount / 100.0;
 
-    // Calculate values
-    double factor;
-    if (item.defaultUnit == 'Portion' || unit == 'Portion' || unit == 'Stk') {
-      // If stored as portion, amount is number of portions
-      factor = amount;
-    } else {
-      // Grams / ml
-      factor = amount / 100.0;
-    }
-
-    // Build display name with amount
-    final displayName = (unit == 'Portion' || unit == 'Stk')
-        ? '${item.name} (${amount.toInt()} $unit)'
-        : '${item.name} (${amount.toInt()}$unit)';
-
-    final newEntry = FoodEntry(
-      name: displayName,
-      calories: _scale(item.caloriesPer100g, factor),
-      protein: _scale(item.proteinPer100g, factor),
-      carbs: _scale(item.carbsPer100g, factor),
-      fat: _scale(item.fatPer100g, factor),
-      date: _selectedDate,
-      amount: amount,
-      unit: unit,
-      foodItemId: item.id,
+    await _logRepository.saveFoodItem(
+      FoodItem(
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        caloriesPer100g: item.caloriesPer100g,
+        proteinPer100g: item.proteinPer100g,
+        carbsPer100g: item.carbsPer100g,
+        fatPer100g: item.fatPer100g,
+        defaultUnit: unit,
+        lastUsed: DateTime.now(),
+      ),
     );
 
-    await _logRepository.addFoodEntry(newEntry);
+    await _logRepository.addFoodEntry(
+      FoodEntry(
+        name: item.name,
+        calories: _scale(item.caloriesPer100g, factor),
+        protein: _scale(item.proteinPer100g, factor),
+        carbs: _scale(item.carbsPer100g, factor),
+        fat: _scale(item.fatPer100g, factor),
+        date: _selectedDate,
+        amount: amount,
+        unit: unit,
+        foodItemId: item.id,
+      ),
+    );
     await _loadEntriesForDate(_selectedDate);
     notifyListeners();
   }
@@ -462,202 +453,89 @@ class MainProvider extends ChangeNotifier {
   }
 
   /// Add an activity using AI to estimate calories burned
-  Future<void> addActivityItem(String activityName) async {
-    if (_isApiKeyMissing()) return;
-
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final activityInfo = await _apiServiceRepository.fetchActivityCalories(
+  Future<void> addActivityItem(String activityName) {
+    return _runAiTask(() async {
+      final info = await _apiServiceRepository.fetchActivityCalories(
         activityName,
+        _bodyWeightForEstimates,
       );
-
-      if (activityInfo != null && activityInfo.caloriesBurned > 0) {
-        final newEntry = ActivityEntry(
-          name: activityInfo.name,
-          caloriesBurned: activityInfo.caloriesBurned,
-          date: _selectedDate,
-        );
-        await _logRepository.addActivityEntry(newEntry);
-        await _loadEntriesForDate(_selectedDate);
-      } else {
-        _errorMessage = 'Verbrannte Kalorien konnten nicht geschätzt werden.';
-      }
-    } catch (e) {
-      _errorMessage = 'Ein unerwarteter Fehler ist aufgetreten: $e';
-    }
-
-    _isLoading = false;
-    notifyListeners();
+      await _addActivityEntryFromInfo(info);
+    });
   }
 
   /// Add unified entry - AI classifies as food or activity automatically
-  Future<void> addUnifiedEntry(String input, String description) async {
-    if (_isApiKeyMissing()) return;
-
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final unifiedEntry = await _apiServiceRepository.classifyAndProcess(
+  Future<void> addUnifiedEntry(String input, String description) {
+    return _runAiTask(() async {
+      final entry = await _apiServiceRepository.classifyAndProcess(
         input,
         description,
+        _bodyWeightForEstimates,
       );
-
-      if (unifiedEntry == null) {
-        _errorMessage = 'Eintrag konnte nicht klassifiziert werden.';
-      } else if (unifiedEntry.isFood && unifiedEntry.foodInfo != null) {
-        final foodInfo = unifiedEntry.foodInfo!;
-        if (foodInfo.calories > 0) {
-          await _saveFoodItemToHistory(foodInfo);
-
-          final newEntry = FoodEntry(
-            name: foodInfo.name,
-            calories: foodInfo.calories,
-            protein: foodInfo.protein.round(),
-            carbs: foodInfo.carbs.round(),
-            fat: foodInfo.fat.round(),
-            date: _selectedDate,
-          );
-          await _logRepository.addFoodEntry(newEntry);
-          await _loadEntriesForDate(_selectedDate);
-        } else {
-          _errorMessage = 'Nährwertdaten konnten nicht abgerufen werden.';
-        }
-      } else if (!unifiedEntry.isFood && unifiedEntry.activityInfo != null) {
-        final activityInfo = unifiedEntry.activityInfo!;
-        if (activityInfo.caloriesBurned > 0) {
-          final newEntry = ActivityEntry(
-            name: activityInfo.name,
-            caloriesBurned: activityInfo.caloriesBurned,
-            date: _selectedDate,
-          );
-          await _logRepository.addActivityEntry(newEntry);
-          await _loadEntriesForDate(_selectedDate);
-        } else {
-          _errorMessage = 'Verbrannte Kalorien konnten nicht geschätzt werden.';
-        }
+      if (entry.isFood) {
+        await _addFoodEntryFromInfo(entry.foodInfo!);
       } else {
-        _errorMessage = 'Eintrag konnte nicht verarbeitet werden.';
+        await _addActivityEntryFromInfo(entry.activityInfo!);
       }
-    } catch (e) {
-      _errorMessage = 'Fehler: ${e.toString().replaceAll('Exception: ', '')}';
-    }
-
-    _isLoading = false;
-    notifyListeners();
+    });
   }
 
   /// Add food from image using AI estimation
-  Future<void> addFoodFromImage(
-    Uint8List imageBytes,
-    String? description,
-  ) async {
-    if (_isApiKeyMissing()) return;
-
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final foodInfo = await _apiServiceRepository.estimateFoodFromImage(
+  Future<void> addFoodFromImage(Uint8List imageBytes, String? description) {
+    return _runAiTask(() async {
+      final info = await _apiServiceRepository.estimateFoodFromImage(
         imageBytes,
         description,
       );
-
-      if (foodInfo != null && foodInfo.calories > 0) {
-        await _saveFoodItemToHistory(foodInfo);
-
-        final newEntry = FoodEntry(
-          name: foodInfo.name,
-          calories: foodInfo.calories,
-          protein: foodInfo.protein.round(),
-          carbs: foodInfo.carbs.round(),
-          fat: foodInfo.fat.round(),
-          date: _selectedDate,
-        );
-        await _logRepository.addFoodEntry(newEntry);
-        await _loadEntriesForDate(_selectedDate);
-      } else {
-        _errorMessage =
-            'Nährwertdaten konnten aus dem Bild nicht geschätzt werden.';
-      }
-    } catch (e) {
-      _errorMessage = 'Fehler: ${e.toString().replaceAll('Exception: ', '')}';
-    }
-
-    _isLoading = false;
-    notifyListeners();
+      await _addFoodEntryFromInfo(info);
+    });
   }
 
-  /// Re-fetch food item with AI
-  Future<void> reFetchFoodItem(FoodEntry foodEntry) async {
-    if (_isApiKeyMissing()) return;
-
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final nutritionInfo = await _apiServiceRepository.fetchFoodNutrition(
-        foodEntry.name,
+  /// Re-estimate a food entry with AI, using the (possibly edited) name and
+  /// amount from the edit dialog
+  Future<void> reFetchFoodItem(FoodEntry foodEntry) {
+    return _runAiTask(() async {
+      final amount = foodEntry.amount != null && foodEntry.unit != null
+          ? '${_formatAmount(foodEntry.amount!)} ${foodEntry.unit}'
+          : '';
+      final info = await _apiServiceRepository.fetchFoodNutrition(
+        amount.isEmpty ? foodEntry.name : '$amount ${foodEntry.name}',
         '',
       );
-
-      if (nutritionInfo != null && nutritionInfo.calories > 0) {
-        final updatedEntry = foodEntry.copyWith(
-          name: nutritionInfo.name,
-          calories: nutritionInfo.calories,
-          protein: nutritionInfo.protein.round(),
-          carbs: nutritionInfo.carbs.round(),
-          fat: nutritionInfo.fat.round(),
-        );
-        await _logRepository.updateFoodEntry(updatedEntry);
-        await _loadEntriesForDate(_selectedDate);
-      } else {
-        _errorMessage = 'Nährwertdaten konnten nicht abgerufen werden.';
-      }
-    } catch (e) {
-      _errorMessage = 'Ein unerwarteter Fehler ist aufgetreten: $e';
-    }
-
-    _isLoading = false;
-    notifyListeners();
-  }
-
-  /// Re-fetch activity item with AI
-  Future<void> reFetchActivityItem(ActivityEntry activityEntry) async {
-    if (_isApiKeyMissing()) return;
-
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final activityInfo = await _apiServiceRepository.fetchActivityCalories(
-        activityEntry.name,
+      final historyId = await _saveFoodItemToHistory(info);
+      await _logRepository.updateFoodEntry(
+        foodEntry.copyWith(
+          name: info.name,
+          calories: info.calories,
+          protein: info.protein.round(),
+          carbs: info.carbs.round(),
+          fat: info.fat.round(),
+          amount: info.amount ?? foodEntry.amount,
+          unit: info.amount != null ? info.unit : foodEntry.unit,
+          foodItemId: historyId,
+        ),
       );
-
-      if (activityInfo != null && activityInfo.caloriesBurned > 0) {
-        final updatedEntry = activityEntry.copyWith(
-          name: activityInfo.name,
-          caloriesBurned: activityInfo.caloriesBurned,
-        );
-        await _logRepository.updateActivityEntry(updatedEntry);
-        await _loadEntriesForDate(_selectedDate);
-      } else {
-        _errorMessage = 'Kaloriendaten konnten nicht abgerufen werden.';
-      }
-    } catch (e) {
-      _errorMessage = 'Ein unerwarteter Fehler ist aufgetreten: $e';
-    }
-
-    _isLoading = false;
-    notifyListeners();
+    });
   }
+
+  /// Re-estimate an activity entry with AI, using the edited name
+  Future<void> reFetchActivityItem(ActivityEntry activityEntry) {
+    return _runAiTask(() async {
+      final info = await _apiServiceRepository.fetchActivityCalories(
+        activityEntry.name,
+        _bodyWeightForEstimates,
+      );
+      await _logRepository.updateActivityEntry(
+        activityEntry.copyWith(
+          name: info.name,
+          caloriesBurned: info.caloriesBurned,
+        ),
+      );
+    });
+  }
+
+  static String _formatAmount(double amount) => amount == amount.roundToDouble()
+      ? amount.toStringAsFixed(0)
+      : amount.toStringAsFixed(1);
 
   /// Update food item manually
   Future<void> updateFoodItemManual(FoodEntry foodEntry) async {
@@ -697,6 +575,9 @@ class MainProvider extends ChangeNotifier {
 
     _userProfile = profile;
     _goals = newGoals;
+    if (_errorMessage != null && missingApiKeyMessage == null) {
+      _errorMessage = null;
+    }
     notifyListeners();
   }
 
@@ -713,124 +594,108 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Perform AI Analysis based on selected type
-  Future<String?> performAiAnalysis(AiAnalysisType type) async {
-    if (_isApiKeyMissing()) return null;
+  // --- Personal assistant ---
 
-    _isLoading = true;
-    _errorMessage = null;
+  static const int _maxMessagesSentToModel = 20;
+
+  /// Sends a message to the personal assistant. The system prompt is rebuilt
+  /// on every call so the assistant always sees the latest log and profile.
+  Future<void> sendAssistantMessage(String text, {String? displayText}) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _assistantBusy) return;
+
+    _assistantMessages = [
+      ..._assistantMessages.where((m) => !m.isError),
+      ChatMessage(role: ChatRole.user, text: trimmed, displayText: displayText),
+    ];
+    await _requestAssistantReply();
+  }
+
+  /// Retries the last user message after an error
+  Future<void> retryAssistant() async {
+    if (_assistantBusy) return;
+    _assistantMessages = _assistantMessages.where((m) => !m.isError).toList();
+    if (_assistantMessages.isEmpty || !_assistantMessages.last.isUser) return;
+    await _requestAssistantReply();
+  }
+
+  Future<void> _requestAssistantReply() async {
+    final keyMessage = missingApiKeyMessage;
+    if (keyMessage != null) {
+      _assistantMessages = [
+        ..._assistantMessages,
+        ChatMessage(role: ChatRole.assistant, text: keyMessage, isError: true),
+      ];
+      notifyListeners();
+      return;
+    }
+
+    _assistantBusy = true;
     notifyListeners();
 
     try {
-      DateTime start;
-      DateTime end;
-      String analysisContext;
-
-      // Determine date range and context
-      final now = DateTime.now();
-      switch (type) {
-        case AiAnalysisType.dayReview:
-        case AiAnalysisType.nextMeal:
-          start = _selectedDate;
-          end = start;
-          analysisContext = type == AiAnalysisType.dayReview
-              ? "Daily Review: Summarize the day's nutrition and activity."
-              : "Next Meal Suggestion: Suggest a healthy next meal based on remaining calories and macros.";
-          break;
-        case AiAnalysisType.weekReview:
-          start = now.subtract(const Duration(days: 7));
-          end = now;
-          analysisContext =
-              "Weekly Review: Analyze the nutrition and activity trends over the last week.";
-          break;
-        case AiAnalysisType.monthReview:
-          start = now.subtract(const Duration(days: 30));
-          end = now;
-          analysisContext =
-              "Monthly Review: Analyze the nutrition and activity trends over the last month.";
-          break;
-        case AiAnalysisType.yearReview:
-          start = now.subtract(const Duration(days: 365));
-          end = now;
-          analysisContext =
-              "Yearly Review: Analyze the nutrition and activity trends over the last year.";
-          break;
-      }
-
-      // Fetch data
-      List<FoodEntry> foods;
-      List<ActivityEntry> activities;
-
-      if (start == end) {
-        // Optimization for single day (though range would work efficiently too)
-        foods = await _logRepository.getFoodEntriesForDate(start);
-        activities = await _logRepository.getActivityEntriesForDate(start);
-      } else {
-        foods = await _logRepository.getFoodEntriesForDateRange(start, end);
-        activities = await _logRepository.getActivityEntriesForDateRange(
-          start,
-          end,
-        );
-      }
-
-      // Build prompt
-      final sb = StringBuffer();
-      sb.writeln(analysisContext);
-      sb.writeln("User Profile: ${_userProfile.toPromptSummary()}");
-      sb.writeln("Daily Goals: ${_goals.toPromptSummary()}");
-      sb.writeln(
-        _userProfile.eatBackActivityCalories
-            ? "Logged activity calories are added to the daily budget."
-            : "Regular training is already included in the goal via the activity level; logged activities are NOT added to the daily budget.",
+      final system = await _buildAssistantContext();
+      final history = _assistantMessages.length > _maxMessagesSentToModel
+          ? _assistantMessages.sublist(
+              _assistantMessages.length - _maxMessagesSentToModel,
+            )
+          : _assistantMessages;
+      final firstUser = history.indexWhere((m) => m.isUser);
+      final reply = await _apiServiceRepository.chat(
+        system: system,
+        messages: firstUser <= 0 ? history : history.sublist(firstUser),
       );
-      sb.writeln(
-        "Data Period: ${start.toIso8601String()} to ${end.toIso8601String()}",
-      );
-      sb.writeln("\nFood Entires:");
-      if (foods.isEmpty) {
-        sb.writeln("No food entries recorded.");
-      } else {
-        for (var f in foods) {
-          sb.writeln(
-            "- ${f.date.toIso8601String().split('T')[0]}: ${f.name} (${f.calories} kcal, P:${f.protein}g, C:${f.carbs}g, F:${f.fat}g)",
-          );
-        }
-      }
-
-      sb.writeln("\nActivity Entries:");
-      if (activities.isEmpty) {
-        sb.writeln("No activity entries recorded.");
-      } else {
-        for (var a in activities) {
-          sb.writeln(
-            "- ${a.date.toIso8601String().split('T')[0]}: ${a.name} (${a.caloriesBurned} kcal)",
-          );
-        }
-      }
-
-      sb.writeln("\nInstructions:");
-      sb.writeln("1. Be encouraging and helpful.");
-      sb.writeln("2. Highlight positives and suggest improvements.");
-      sb.writeln("3. Keep it concise but informative.");
-      sb.writeln("4. Use Markdown formatting.");
-      sb.writeln("5. Respond in German.");
-
-      final prompt = sb.toString();
-
-      final result = await _apiServiceRepository.analyzeDiet(prompt);
-
-      if (result == null) {
-        _errorMessage = "Die Analyse konnte nicht erstellt werden.";
-      }
-
-      _isLoading = false;
-      notifyListeners();
-      return result;
+      _assistantMessages = [
+        ..._assistantMessages,
+        ChatMessage(role: ChatRole.assistant, text: reply.trim()),
+      ];
+      await _prefsRepository.saveChatHistory(_assistantMessages);
     } catch (e) {
-      _errorMessage = 'Fehler bei der Analyse: $e';
-      _isLoading = false;
-      notifyListeners();
-      return null;
+      _assistantMessages = [
+        ..._assistantMessages,
+        ChatMessage(
+          role: ChatRole.assistant,
+          text: _errorText(e),
+          isError: true,
+        ),
+      ];
     }
+
+    _assistantBusy = false;
+    notifyListeners();
+  }
+
+  Future<String> _buildAssistantContext() async {
+    final now = DateTime.now();
+    final historyStart = _daysBefore(_selectedDate, 30);
+    final foods = await _logRepository.getFoodEntriesForDateRange(
+      historyStart,
+      _selectedDate,
+    );
+    final activities = await _logRepository.getActivityEntriesForDateRange(
+      historyStart,
+      _selectedDate,
+    );
+    final weights = await _logRepository.getWeightEntriesForDateRange(
+      historyStart,
+      _selectedDate,
+    );
+    return AssistantContextBuilder.build(
+      profile: _userProfile,
+      goals: _goals,
+      now: now,
+      selectedDate: _selectedDate,
+      dayFoods: _foodEntries,
+      dayActivities: _activityEntries,
+      dayBudget: calorieBudget,
+      history: DaySummary.fromEntries(foods, activities),
+      weights: weights,
+    );
+  }
+
+  Future<void> clearAssistantChat() async {
+    _assistantMessages = [];
+    await _prefsRepository.saveChatHistory(_assistantMessages);
+    notifyListeners();
   }
 }

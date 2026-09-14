@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'barcode_scanner_screen.dart';
+import '../widgets/app_text_field.dart';
 
 /// Screen for photo-based input: either barcode scanning or food photo
 class PhotoInputScreen extends StatefulWidget {
@@ -171,14 +172,13 @@ class _PhotoInputScreenState extends State<PhotoInputScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
+          AppTextField(
             controller: _descriptionController,
-            decoration: const InputDecoration(
-              labelText: 'Beschreibung (optional)',
-              hintText: 'z.B. Schnitzel mit Pommes',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 2,
+            label: 'Beschreibung (optional)',
+            hint: 'z. B. Schnitzel mit Pommes, ca. 300 g',
+            textCapitalization: TextCapitalization.sentences,
+            maxLines: 3,
+            minLines: 1,
           ),
           const SizedBox(height: 8),
           Text(

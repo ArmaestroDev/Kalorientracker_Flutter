@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../../data/models/activity_entry.dart';
+import '../../../logic/number_format.dart';
+import '../app_text_field.dart';
 
 class EditActivityDialog extends StatefulWidget {
   final ActivityEntry activityEntry;
-  final Function(ActivityEntry) onSaveManual;
-  final Function(ActivityEntry) onRecalculate;
+  final ValueChanged<ActivityEntry> onSaveManual;
+  final ValueChanged<ActivityEntry> onRecalculate;
 
   const EditActivityDialog({
     super.key,
@@ -18,8 +20,9 @@ class EditActivityDialog extends StatefulWidget {
 }
 
 class _EditActivityDialogState extends State<EditActivityDialog> {
-  late TextEditingController _nameController;
-  late TextEditingController _caloriesController;
+  late final TextEditingController _nameController;
+  late final TextEditingController _caloriesController;
+  bool _submitted = false;
 
   @override
   void initState() {
@@ -37,17 +40,31 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
     super.dispose();
   }
 
+  int? get _calories {
+    final value = parseLocalizedNumber(_caloriesController.text);
+    return value == null || value < 0 ? null : value.round();
+  }
+
   void _saveManual() {
-    final updated = widget.activityEntry.copyWith(
-      name: _nameController.text,
-      caloriesBurned: int.tryParse(_caloriesController.text) ?? 0,
+    setState(() => _submitted = true);
+    if (_nameController.text.trim().isEmpty || _calories == null) return;
+    widget.onSaveManual(
+      widget.activityEntry.copyWith(
+        name: _nameController.text.trim(),
+        caloriesBurned: _calories,
+      ),
     );
-    widget.onSaveManual(updated);
     Navigator.of(context).pop();
   }
 
   void _recalculate() {
-    widget.onRecalculate(widget.activityEntry);
+    if (_nameController.text.trim().isEmpty) {
+      setState(() => _submitted = true);
+      return;
+    }
+    widget.onRecalculate(
+      widget.activityEntry.copyWith(name: _nameController.text.trim()),
+    );
     Navigator.of(context).pop();
   }
 
@@ -55,25 +72,35 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Aktivität bearbeiten'),
-      content: SingleChildScrollView(
+      scrollable: true,
+      content: SizedBox(
+        width: 400,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
+            AppTextField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Name',
-                border: OutlineInputBorder(),
-              ),
+              label: 'Name',
+              textCapitalization: TextCapitalization.sentences,
+              errorText: _submitted && _nameController.text.trim().isEmpty
+                  ? 'Pflichtfeld'
+                  : null,
             ),
             const SizedBox(height: 12),
-            TextField(
+            AppTextField.number(
               controller: _caloriesController,
-              decoration: const InputDecoration(
-                labelText: 'Verbrannte Kalorien',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
+              label: 'Verbrannte Kalorien',
+              suffix: 'kcal',
+              errorText: _submitted && _calories == null
+                  ? 'Ungültige Zahl'
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _recalculate,
+              icon: const Icon(Icons.auto_awesome, size: 18),
+              label: const Text('Mit KI neu schätzen'),
             ),
           ],
         ),
@@ -82,10 +109,6 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Abbrechen'),
-        ),
-        OutlinedButton(
-          onPressed: _recalculate,
-          child: const Text('Neu berechnen'),
         ),
         FilledButton(onPressed: _saveManual, child: const Text('Speichern')),
       ],

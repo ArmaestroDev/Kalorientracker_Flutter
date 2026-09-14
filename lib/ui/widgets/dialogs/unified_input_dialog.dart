@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import '../app_text_field.dart';
 
 /// Unified dialog for entering meals or activities via text
 /// AI will classify whether the input is a food or activity
 class UnifiedInputDialog extends StatefulWidget {
-  final Function(String name, String description) onSubmit;
+  final void Function(String name, String description) onSubmit;
 
   const UnifiedInputDialog({super.key, required this.onSubmit});
 
@@ -22,40 +23,47 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
     super.dispose();
   }
 
+  void _submit() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+    widget.onSubmit(name, _descriptionController.text.trim());
+    Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Eintrag hinzufügen'),
-      content: SingleChildScrollView(
+      scrollable: true,
+      content: SizedBox(
+        width: 400,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Gib eine Mahlzeit oder Aktivität ein - die KI erkennt automatisch, was es ist.',
+              'Gib eine Mahlzeit oder Aktivität ein – die KI erkennt automatisch, was es ist. Mit Menge wird es genauer.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 16),
-            TextField(
+            AppTextField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Mahlzeit oder Aktivität',
-                hintText: 'z.B. 100g Reis oder 30 min Joggen',
-                border: OutlineInputBorder(),
-              ),
+              label: 'Mahlzeit oder Aktivität',
+              hint: 'z. B. 250 g Skyr oder 60 min BJJ',
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.next,
               autofocus: true,
             ),
             const SizedBox(height: 16),
-            TextField(
+            AppTextField(
               controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Beschreibung (optional)',
-                hintText: 'z.B. mit Soße, im Fitnessstudio',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
+              label: 'Beschreibung (optional)',
+              hint: 'z. B. aus der Mensa, mit Soße',
+              textCapitalization: TextCapitalization.sentences,
+              maxLines: 3,
+              minLines: 1,
             ),
           ],
         ),
@@ -65,17 +73,12 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Abbrechen'),
         ),
-        FilledButton(
-          onPressed: () {
-            if (_nameController.text.isNotEmpty) {
-              widget.onSubmit(
-                _nameController.text,
-                _descriptionController.text,
-              );
-              Navigator.of(context).pop();
-            }
-          },
-          child: const Text('Hinzufügen'),
+        ListenableBuilder(
+          listenable: _nameController,
+          builder: (context, _) => FilledButton(
+            onPressed: _nameController.text.trim().isEmpty ? null : _submit,
+            child: const Text('Hinzufügen'),
+          ),
         ),
       ],
     );

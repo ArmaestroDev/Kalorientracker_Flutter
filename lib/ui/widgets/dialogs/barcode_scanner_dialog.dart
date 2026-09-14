@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../data/services/food_api_service.dart';
+import '../../../logic/number_format.dart';
+import '../app_text_field.dart';
 
 class BarcodeScannerResultDialog extends StatefulWidget {
   final FoodNutritionInfo foodInfo;
@@ -28,9 +30,12 @@ class _BarcodeScannerResultDialogState
     super.dispose();
   }
 
-  int get _grams => int.tryParse(_gramsController.text) ?? 100;
+  int? get _grams {
+    final value = parseLocalizedNumber(_gramsController.text);
+    return value == null || value <= 0 ? null : value.round();
+  }
 
-  double get _factor => _grams / 100.0;
+  double get _factor => (_grams ?? 0) / 100.0;
 
   @override
   Widget build(BuildContext context) {
@@ -46,18 +51,18 @@ class _BarcodeScannerResultDialogState
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text('Kalorien: ${widget.foodInfo.calories} kcal'),
+            Text(
+              'Kalorien: ${formatLocalizedNumber(widget.foodInfo.caloriesPer100g ?? widget.foodInfo.calories.toDouble())} kcal',
+            ),
             Text('Protein: ${widget.foodInfo.protein.toStringAsFixed(1)}g'),
             Text('Kohlenhydrate: ${widget.foodInfo.carbs.toStringAsFixed(1)}g'),
             Text('Fett: ${widget.foodInfo.fat.toStringAsFixed(1)}g'),
             const SizedBox(height: 16),
-            TextField(
+            AppTextField.number(
               controller: _gramsController,
-              decoration: const InputDecoration(
-                labelText: 'Menge (in Gramm)',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
+              label: 'Menge',
+              suffix: 'g',
+              autofocus: true,
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: 12),
@@ -71,14 +76,14 @@ class _BarcodeScannerResultDialogState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Für $_grams g:',
+                    'Für ${_grams ?? 0} g:',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: Theme.of(context).colorScheme.onPrimaryContainer,
                     ),
                   ),
                   Text(
-                    '${(widget.foodInfo.calories * _factor).round()} kcal',
+                    '${((widget.foodInfo.caloriesPer100g ?? widget.foodInfo.calories.toDouble()) * _factor).round()} kcal · P ${(widget.foodInfo.protein * _factor).round()} g',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -100,10 +105,12 @@ class _BarcodeScannerResultDialogState
           child: const Text('Abbrechen'),
         ),
         FilledButton(
-          onPressed: () {
-            widget.onConfirm(_grams);
-            Navigator.of(context).pop();
-          },
+          onPressed: _grams == null
+              ? null
+              : () {
+                  widget.onConfirm(_grams!);
+                  Navigator.of(context).pop();
+                },
           child: const Text('Hinzufügen'),
         ),
       ],

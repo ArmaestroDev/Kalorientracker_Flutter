@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/models/food_entry.dart';
+import '../../logic/number_format.dart';
 
 class FoodItemRow extends StatelessWidget {
   final FoodEntry food;
@@ -15,12 +16,18 @@ class FoodItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final amount = food.amount != null && food.unit != null
+        ? '${formatLocalizedNumber(food.amount!)} ${food.unit} · '
+        : '';
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
+        onTap: onEdit,
         title: Text(food.name),
         subtitle: Text(
-          'P: ${food.protein}g | K: ${food.carbs}g | F: ${food.fat}g',
+          '${amount}P ${food.protein} g · K ${food.carbs} g · F ${food.fat} g',
           style: Theme.of(context).textTheme.bodySmall,
         ),
         trailing: Row(

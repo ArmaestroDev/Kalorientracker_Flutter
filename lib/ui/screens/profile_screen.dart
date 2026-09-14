@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import '../../data/models/user_profile.dart';
 import '../../data/models/enums.dart';
 import '../../logic/goals_calculator.dart';
+import '../../logic/number_format.dart';
+import '../widgets/app_text_field.dart';
 
 class ProfileScreen extends StatefulWidget {
   final UserProfile initialProfile;
-  final Function(UserProfile) onSave;
+  final ValueChanged<UserProfile> onSave;
 
   const ProfileScreen({
     super.key,
@@ -18,134 +20,134 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  late TextEditingController _geminiApiKeyController;
-  late TextEditingController _claudeApiKeyController;
-  late TextEditingController _openaiApiKeyController;
-  late TextEditingController _grokApiKeyController;
-  late TextEditingController _ageController;
-  late TextEditingController _weightController;
-  late TextEditingController _heightController;
-  late TextEditingController _bodyFatController;
+  late final Map<AiProvider, TextEditingController> _apiKeyControllers;
+  late final Map<AiProvider, TextEditingController> _modelControllers;
+  late final TextEditingController _ageController;
+  late final TextEditingController _weightController;
+  late final TextEditingController _heightController;
+  late final TextEditingController _bodyFatController;
+  late final TextEditingController _aboutMeController;
 
   late AiProvider _selectedProvider;
   late Gender _gender;
   late ActivityLevel _activityLevel;
   late FitnessGoal _goal;
   late bool _eatBackActivityCalories;
+  bool _showApiKey = false;
 
   @override
   void initState() {
     super.initState();
-    _geminiApiKeyController = TextEditingController(
-      text: widget.initialProfile.geminiApiKey,
-    );
-    _claudeApiKeyController = TextEditingController(
-      text: widget.initialProfile.claudeApiKey,
-    );
-    _openaiApiKeyController = TextEditingController(
-      text: widget.initialProfile.openaiApiKey,
-    );
-    _grokApiKeyController = TextEditingController(
-      text: widget.initialProfile.grokApiKey,
-    );
+    final profile = widget.initialProfile;
+    _apiKeyControllers = {
+      for (final provider in AiProvider.values)
+        provider: TextEditingController(text: profile.apiKeyFor(provider)),
+    };
+    _modelControllers = {
+      for (final provider in AiProvider.values)
+        provider: TextEditingController(
+          text: profile.modelOverrides[provider] ?? '',
+        ),
+    };
     _ageController = TextEditingController(
-      text: widget.initialProfile.age > 0
-          ? widget.initialProfile.age.toString()
-          : '',
+      text: profile.age > 0 ? '${profile.age}' : '',
     );
     _weightController = TextEditingController(
-      text: widget.initialProfile.weightKg > 0
-          ? widget.initialProfile.weightKg.toString()
-          : '',
+      text: profile.weightKg > 0 ? formatLocalizedNumber(profile.weightKg) : '',
     );
     _heightController = TextEditingController(
-      text: widget.initialProfile.heightCm > 0
-          ? widget.initialProfile.heightCm.toString()
-          : '',
+      text: profile.heightCm > 0 ? formatLocalizedNumber(profile.heightCm) : '',
     );
-
     _bodyFatController = TextEditingController(
-      text: widget.initialProfile.bodyFatPercent > 0
-          ? _formatNumber(widget.initialProfile.bodyFatPercent)
+      text: profile.bodyFatPercent > 0
+          ? formatLocalizedNumber(profile.bodyFatPercent)
           : '',
     );
-    _weightController.text = widget.initialProfile.weightKg > 0
-        ? _formatNumber(widget.initialProfile.weightKg)
-        : '';
-    _heightController.text = widget.initialProfile.heightCm > 0
-        ? _formatNumber(widget.initialProfile.heightCm)
-        : '';
-    for (final controller in [
-      _ageController,
-      _weightController,
-      _heightController,
-      _bodyFatController,
-    ]) {
-      controller.addListener(() => setState(() {}));
-    }
+    _aboutMeController = TextEditingController(text: profile.aboutMe);
 
-    _eatBackActivityCalories = widget.initialProfile.eatBackActivityCalories;
-    _selectedProvider = widget.initialProfile.selectedProvider;
-    _gender = widget.initialProfile.gender;
-    _activityLevel = widget.initialProfile.activityLevel;
-    _goal = widget.initialProfile.goal;
+    _selectedProvider = profile.selectedProvider;
+    _gender = profile.gender;
+    _activityLevel = profile.activityLevel;
+    _goal = profile.goal;
+    _eatBackActivityCalories = profile.eatBackActivityCalories;
   }
 
   @override
   void dispose() {
-    _geminiApiKeyController.dispose();
-    _claudeApiKeyController.dispose();
-    _openaiApiKeyController.dispose();
-    _grokApiKeyController.dispose();
-    _ageController.dispose();
-    _weightController.dispose();
-    _heightController.dispose();
-    _bodyFatController.dispose();
+    for (final c in [
+      ..._apiKeyControllers.values,
+      ..._modelControllers.values,
+      _ageController,
+      _weightController,
+      _heightController,
+      _bodyFatController,
+      _aboutMeController,
+    ]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  static String _formatNumber(double value) {
-    final text = value == value.roundToDouble()
-        ? value.toStringAsFixed(0)
-        : value.toStringAsFixed(1);
-    return text.replaceAll('.', ',');
-  }
-
-  static double _parseNumber(String text) =>
-      double.tryParse(text.trim().replaceAll(',', '.')) ?? 0.0;
-
-  bool get _isFormValid => _buildProfile().hasBodyData;
-
-  void _save() => widget.onSave(_buildProfile());
-
   UserProfile _buildProfile() {
     return UserProfile(
-      geminiApiKey: _geminiApiKeyController.text,
-      claudeApiKey: _claudeApiKeyController.text,
-      openaiApiKey: _openaiApiKeyController.text,
-      grokApiKey: _grokApiKeyController.text,
+      geminiApiKey: _apiKeyControllers[AiProvider.gemini]!.text.trim(),
+      claudeApiKey: _apiKeyControllers[AiProvider.claude]!.text.trim(),
+      openaiApiKey: _apiKeyControllers[AiProvider.openai]!.text.trim(),
+      grokApiKey: _apiKeyControllers[AiProvider.grok]!.text.trim(),
+      modelOverrides: {
+        for (final entry in _modelControllers.entries)
+          if (entry.value.text.trim().isNotEmpty)
+            entry.key: entry.value.text.trim(),
+      },
       selectedProvider: _selectedProvider,
-      age: int.tryParse(_ageController.text.trim()) ?? 0,
-      weightKg: _parseNumber(_weightController.text),
-      heightCm: _parseNumber(_heightController.text),
-      bodyFatPercent: _parseNumber(_bodyFatController.text),
+      age: parseLocalizedNumber(_ageController.text)?.round() ?? 0,
+      weightKg: parseLocalizedNumber(_weightController.text) ?? 0,
+      heightCm: parseLocalizedNumber(_heightController.text) ?? 0,
+      bodyFatPercent: parseLocalizedNumber(_bodyFatController.text) ?? 0,
       gender: _gender,
       activityLevel: _activityLevel,
       goal: _goal,
       eatBackActivityCalories: _eatBackActivityCalories,
+      aboutMe: _aboutMeController.text.trim(),
     );
   }
 
-  Widget _buildGoalPreview(BuildContext context) {
-    final profile = _buildProfile();
+  void _refresh(String _) => setState(() {});
+
+  Widget _sectionTitle(String title, {String? subtitle}) {
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 24, bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+          ),
+          if (subtitle != null)
+            Text(
+              subtitle,
+              style: textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoalPreview(UserProfile profile) {
     final goals = GoalsCalculator.calculateGoals(profile);
     if (goals.calories <= 0) return const SizedBox.shrink();
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final usesLeanMass = GoalsCalculator.leanMassKg(profile) != null;
+    final onColor = colorScheme.onSecondaryContainer;
 
     return Card(
       color: colorScheme.secondaryContainer,
+      margin: const EdgeInsets.only(top: 16),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -155,30 +157,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
               'Deine Ziele',
               style: textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
-                color: colorScheme.onSecondaryContainer,
+                color: onColor,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               '${goals.calories} kcal pro Tag',
-              style: textTheme.headlineSmall?.copyWith(
-                color: colorScheme.onSecondaryContainer,
-              ),
+              style: textTheme.headlineSmall?.copyWith(color: onColor),
             ),
             Text(
-              'Protein ${goals.proteinGrams}g · Kohlenh. ${goals.carbsGrams}g · Fett ${goals.fatGrams}g',
-              style: textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSecondaryContainer,
-              ),
+              'Protein ${goals.proteinGrams} g · Kohlenh. ${goals.carbsGrams} g · Fett ${goals.fatGrams} g',
+              style: textTheme.bodyMedium?.copyWith(color: onColor),
             ),
             const SizedBox(height: 8),
             Text(
               'Grundumsatz ${GoalsCalculator.calculateBmr(profile).round()} kcal '
               '(${usesLeanMass ? 'Katch-McArdle, Magermasse' : 'Mifflin-St Jeor'}) · '
               'Erhaltung ca. ${goals.maintenanceCalories} kcal',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSecondaryContainer,
-              ),
+              style: textTheme.bodySmall?.copyWith(color: onColor),
             ),
           ],
         ),
@@ -188,220 +184,223 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final profile = _buildProfile();
+    final provider = _selectedProvider;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Dein Profil & Ziele')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
           children: [
-            // AI Provider Selection
-            DropdownButtonFormField<AiProvider>(
-              initialValue: _selectedProvider,
-              decoration: const InputDecoration(
-                labelText: 'KI-Anbieter',
-                border: OutlineInputBorder(),
-              ),
-              items: AiProvider.values.map((provider) {
-                return DropdownMenuItem(
-                  value: provider,
-                  child: Text(provider.name.toUpperCase()),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() => _selectedProvider = value);
-                }
-              },
+            _sectionTitle('Körperdaten'),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AppTextField.number(
+                    controller: _ageController,
+                    label: 'Alter',
+                    suffix: 'J.',
+                    onChanged: _refresh,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: DropdownButtonFormField<Gender>(
+                    initialValue: _gender,
+                    decoration: const InputDecoration(
+                      labelText: 'Geschlecht',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: Gender.male,
+                        child: Text('Männlich'),
+                      ),
+                      DropdownMenuItem(
+                        value: Gender.female,
+                        child: Text('Weiblich'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setState(() => _gender = value);
+                    },
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
-
-            // API Key Input (conditional)
-            if (_selectedProvider == AiProvider.gemini)
-              TextFormField(
-                controller: _geminiApiKeyController,
-                decoration: const InputDecoration(
-                  labelText: 'Gemini API Schlüssel',
-                  hintText: 'Gib deinen Gemini API-Schlüssel ein',
-                  border: OutlineInputBorder(),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AppTextField.number(
+                    controller: _weightController,
+                    label: 'Gewicht',
+                    suffix: 'kg',
+                    onChanged: _refresh,
+                  ),
                 ),
-                obscureText: true,
-              )
-            else if (_selectedProvider == AiProvider.claude)
-              TextFormField(
-                controller: _claudeApiKeyController,
-                decoration: const InputDecoration(
-                  labelText: 'Claude API Schlüssel',
-                  hintText: 'Gib deinen Claude API-Schlüssel ein',
-                  border: OutlineInputBorder(),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AppTextField.number(
+                    controller: _heightController,
+                    label: 'Größe',
+                    suffix: 'cm',
+                    onChanged: _refresh,
+                  ),
                 ),
-                obscureText: true,
-              )
-            else if (_selectedProvider == AiProvider.openai)
-              TextFormField(
-                controller: _openaiApiKeyController,
-                decoration: const InputDecoration(
-                  labelText: 'OpenAI API Schlüssel',
-                  hintText: 'Gib deinen OpenAI API-Schlüssel ein',
-                  border: OutlineInputBorder(),
-                ),
-                obscureText: true,
-              )
-            else
-              TextFormField(
-                controller: _grokApiKeyController,
-                decoration: const InputDecoration(
-                  labelText: 'Grok API Schlüssel',
-                  hintText: 'Gib deinen Grok API-Schlüssel ein',
-                  border: OutlineInputBorder(),
-                ),
-                obscureText: true,
-              ),
-            const SizedBox(height: 16),
-
-            // Age Input
-            TextFormField(
-              controller: _ageController,
-              decoration: const InputDecoration(
-                labelText: 'Alter',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
+              ],
             ),
             const SizedBox(height: 16),
-
-            // Weight Input
-            TextFormField(
-              controller: _weightController,
-              decoration: const InputDecoration(
-                labelText: 'Gewicht (kg)',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Height Input
-            TextFormField(
-              controller: _heightController,
-              decoration: const InputDecoration(
-                labelText: 'Größe (cm)',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            TextFormField(
+            AppTextField.number(
               controller: _bodyFatController,
-              decoration: const InputDecoration(
-                labelText: 'Körperfett (%) – optional',
-                helperText:
-                    'Wenn bekannt, werden Grundumsatz und Protein genauer über die Magermasse berechnet',
-                helperMaxLines: 2,
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
+              label: 'Körperfett (optional)',
+              suffix: '%',
+              helper:
+                  'Wenn bekannt, werden Grundumsatz und Protein genauer über die Magermasse berechnet.',
+              onChanged: _refresh,
             ),
-            const SizedBox(height: 16),
 
-            // Gender Selection
-            DropdownButtonFormField<Gender>(
-              initialValue: _gender,
-              decoration: const InputDecoration(
-                labelText: 'Geschlecht',
-                border: OutlineInputBorder(),
-              ),
-              items: Gender.values.map((gender) {
-                return DropdownMenuItem(
-                  value: gender,
-                  child: Text(gender == Gender.male ? 'Männlich' : 'Weiblich'),
-                );
-              }).toList(),
-              onChanged: (value) {
-                if (value != null) {
-                  setState(() => _gender = value);
-                }
-              },
-            ),
-            const SizedBox(height: 16),
-
-            // Activity Level Selection
+            _sectionTitle('Aktivität & Ziel'),
             DropdownButtonFormField<ActivityLevel>(
               initialValue: _activityLevel,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Aktivitätslevel',
                 border: OutlineInputBorder(),
               ),
-              isExpanded: true,
-              items: ActivityLevel.values.map((level) {
-                return DropdownMenuItem(
-                  value: level,
-                  child: Text(
-                    level.description,
-                    overflow: TextOverflow.ellipsis,
+              items: [
+                for (final level in ActivityLevel.values)
+                  DropdownMenuItem(
+                    value: level,
+                    child: Text(
+                      level.description,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                );
-              }).toList(),
+              ],
               onChanged: (value) {
-                if (value != null) {
-                  setState(() => _activityLevel = value);
-                }
+                if (value != null) setState(() => _activityLevel = value);
               },
             ),
             const SizedBox(height: 16),
-
-            // Fitness Goal Selection
             DropdownButtonFormField<FitnessGoal>(
               initialValue: _goal,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Fitness-Ziel',
                 border: OutlineInputBorder(),
               ),
-              isExpanded: true,
-              items: FitnessGoal.values.map((goal) {
-                return DropdownMenuItem(
-                  value: goal,
-                  child: Text(
-                    goal.description,
-                    overflow: TextOverflow.ellipsis,
+              items: [
+                for (final goal in FitnessGoal.values)
+                  DropdownMenuItem(
+                    value: goal,
+                    child: Text(
+                      goal.description,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                );
-              }).toList(),
+              ],
               onChanged: (value) {
-                if (value != null) {
-                  setState(() => _goal = value);
-                }
+                if (value != null) setState(() => _goal = value);
               },
             ),
-            const SizedBox(height: 8),
-
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Aktivitätskalorien zum Tagesziel addieren'),
               subtitle: const Text(
-                'Nur aktivieren, wenn dein Aktivitätslevel dein Training NICHT schon enthält (z. B. "Sitzend"). Sonst wird Training doppelt gezählt.',
+                'Nur aktivieren, wenn dein Aktivitätslevel dein Training nicht schon enthält (z. B. „Sitzend“). Sonst wird Training doppelt gezählt.',
               ),
               value: _eatBackActivityCalories,
               onChanged: (value) =>
                   setState(() => _eatBackActivityCalories = value),
             ),
-            const SizedBox(height: 16),
+            _buildGoalPreview(profile),
 
-            _buildGoalPreview(context),
-            const SizedBox(height: 16),
-
-            // Save Button
-            FilledButton(
-              onPressed: _isFormValid ? _save : null,
-              child: const Text('Speichern und Ziele neu berechnen'),
+            _sectionTitle(
+              'Über mich',
+              subtitle:
+                  'Dein Coach berücksichtigt das bei jeder Antwort und jedem Vorschlag.',
             ),
+            AppTextField(
+              controller: _aboutMeController,
+              hint:
+                  'z. B. BJJ 3–5× pro Woche, koche nicht selbst, esse in der Mensa, abends oft Hunger, keine Allergien, mag Skyr …',
+              textCapitalization: TextCapitalization.sentences,
+              keyboardType: TextInputType.multiline,
+              maxLines: 8,
+              minLines: 4,
+            ),
+
+            _sectionTitle('KI-Assistent'),
+            DropdownButtonFormField<AiProvider>(
+              initialValue: provider,
+              decoration: const InputDecoration(
+                labelText: 'KI-Anbieter',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                for (final p in AiProvider.values)
+                  DropdownMenuItem(value: p, child: Text(p.label)),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() {
+                    _selectedProvider = value;
+                    _showApiKey = false;
+                  });
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AppTextField(
+                    key: ValueKey('key-${provider.name}-$_showApiKey'),
+                    controller: _apiKeyControllers[provider]!,
+                    label: '${provider.label} API-Schlüssel',
+                    obscureText: !_showApiKey,
+                  ),
+                ),
+                IconButton(
+                  tooltip: _showApiKey ? 'Verbergen' : 'Anzeigen',
+                  icon: Icon(
+                    _showApiKey ? Icons.visibility_off : Icons.visibility,
+                  ),
+                  onPressed: () => setState(() => _showApiKey = !_showApiKey),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            AppTextField(
+              key: ValueKey('model-${provider.name}'),
+              controller: _modelControllers[provider]!,
+              label: 'Modell (optional)',
+              hint: provider.defaultModel,
+              helper:
+                  'Leer lassen für ${provider.defaultModel}. Nur ändern, wenn der Anbieter das Modell umbenannt hat.',
+            ),
+            const SizedBox(height: 32),
+            FilledButton.icon(
+              onPressed: profile.hasBodyData
+                  ? () => widget.onSave(_buildProfile())
+                  : null,
+              icon: const Icon(Icons.save),
+              label: const Text('Speichern'),
+            ),
+            if (!profile.hasBodyData)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Alter, Gewicht und Größe werden zum Speichern benötigt.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
           ],
         ),
       ),

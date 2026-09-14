@@ -7,7 +7,6 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-
 void main() {
   testWidgets('App loads successfully', (WidgetTester tester) async {
     // TODO: Since we introduced Dependency Injection, this test needs Mock Repositories.

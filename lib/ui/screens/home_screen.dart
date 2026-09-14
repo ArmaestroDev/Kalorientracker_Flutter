@@ -14,10 +14,12 @@ import '../widgets/dialogs/unified_input_dialog.dart';
 import '../widgets/dialogs/edit_food_dialog.dart';
 import '../widgets/dialogs/edit_activity_dialog.dart';
 import '../widgets/dialogs/barcode_scanner_dialog.dart';
-import '../widgets/dialogs/ai_assistant_dialog.dart';
 import '../widgets/dialogs/delete_confirmation_dialog.dart';
 import '../widgets/dialogs/food_recall_dialog.dart';
 import '../../data/models/food_item.dart';
+import '../../logic/number_format.dart';
+import '../widgets/app_text_field.dart';
+import 'assistant_screen.dart';
 import 'profile_screen.dart';
 import 'photo_input_screen.dart';
 
@@ -60,63 +62,71 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showSmartScalingDialog(FoodItem item) {
-    final TextEditingController amountController = TextEditingController();
-    // Safety check for old database items where defaultUnit might be missing
+    final provider = context.read<MainProvider>();
     final unit = item.defaultUnit.isEmpty ? 'g' : item.defaultUnit;
-
-    final isPortion = unit == 'Portion' || unit == 'Stk';
-    final unitLabel = isPortion ? 'Anzahl' : 'Menge (g/ml)';
-    final suffix = isPortion ? unit : 'g';
-    final standardText = isPortion
-        ? 'Standard: ${item.caloriesPer100g.toInt()} kcal pro $unit'
-        : 'Standard: ${item.caloriesPer100g.toInt()} kcal pro 100g';
+    final isPerUnit = unit == 'Portion' || unit == 'Stk';
+    final amountController = TextEditingController(text: isPerUnit ? '1' : '');
 
     showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('${item.name} hinzufügen'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(standardText),
-              const SizedBox(height: 16),
-              TextField(
-                controller: amountController,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: InputDecoration(
-                  labelText: unitLabel,
-                  border: const OutlineInputBorder(),
-                  suffixText: suffix,
-                ),
-                autofocus: true,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final amount = parseLocalizedNumber(amountController.text);
+            final factor = amount == null || amount <= 0
+                ? null
+                : (isPerUnit ? amount : amount / 100);
+
+            void submit() {
+              if (factor == null) return;
+              provider.addFoodItemFromHistory(item, amount!);
+              Navigator.of(dialogContext).pop();
+            }
+
+            return AlertDialog(
+              title: Text(item.name),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    isPerUnit
+                        ? '${item.caloriesPer100g.round()} kcal pro ${unit == 'Stk' ? 'Stück' : 'Portion'}'
+                        : '${item.caloriesPer100g.round()} kcal pro 100 $unit',
+                  ),
+                  const SizedBox(height: 16),
+                  AppTextField.number(
+                    controller: amountController,
+                    label: isPerUnit ? 'Anzahl' : 'Menge',
+                    suffix: unit,
+                    autofocus: true,
+                    onChanged: (_) => setDialogState(() {}),
+                    onSubmitted: (_) => submit(),
+                  ),
+                  if (factor != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '${(item.caloriesPer100g * factor).round()} kcal · '
+                      'P ${(item.proteinPer100g * factor).round()} g · '
+                      'K ${(item.carbsPer100g * factor).round()} g · '
+                      'F ${(item.fatPer100g * factor).round()} g',
+                      style: Theme.of(dialogContext).textTheme.titleSmall,
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Abbrechen'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final amount = double.tryParse(
-                  amountController.text.replaceAll(',', '.'),
-                );
-                if (amount != null && amount > 0) {
-                  context.read<MainProvider>().addFoodItemFromHistory(
-                    item,
-                    amount,
-                    suffix,
-                  );
-                  Navigator.of(context).pop();
-                }
-              },
-              child: const Text('Hinzufügen'),
-            ),
-          ],
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Abbrechen'),
+                ),
+                FilledButton(
+                  onPressed: factor == null ? null : submit,
+                  child: const Text('Hinzufügen'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -130,7 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
 
     void submit(BuildContext dialogContext) {
-      final value = double.tryParse(controller.text.replaceAll(',', '.'));
+      final value = parseLocalizedNumber(controller.text);
       if (value != null && value > 20 && value < 400) {
         provider.saveWeight(value);
         Navigator.of(dialogContext).pop();
@@ -151,17 +161,11 @@ class _HomeScreenState extends State<HomeScreen> {
               style: Theme.of(dialogContext).textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
-            TextField(
+            AppTextField.number(
               controller: controller,
+              label: 'Gewicht',
+              suffix: 'kg',
               autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: const InputDecoration(
-                labelText: 'Gewicht',
-                suffixText: 'kg',
-                border: OutlineInputBorder(),
-              ),
               onSubmitted: (_) => submit(dialogContext),
             ),
           ],
@@ -574,10 +578,12 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 FloatingActionButton(
                   heroTag: 'ai_assistant_fab',
+                  tooltip: 'Dein Coach',
                   onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => const AiAssistantDialog(),
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const AssistantScreen(),
+                      ),
                     );
                   },
                   backgroundColor: Theme.of(

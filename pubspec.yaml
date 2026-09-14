@@ -45,8 +45,6 @@ dependencies:
   # HTTP client for API calls
   http: ^1.2.2
 
-  # Gemini AI SDK
-  google_generative_ai: ^0.4.6
 
   # Barcode Scanner
   mobile_scanner: ^6.0.2
@@ -61,7 +59,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   sqflite_common_ffi_web: ^1.1.1
   image_picker: ^1.2.1
-  flutter_markdown: ^0.7.7+1
+  flutter_markdown_plus: ^1.0.12
 
 dev_dependencies:
   flutter_test:
