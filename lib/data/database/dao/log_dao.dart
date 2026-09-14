@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import '../app_database.dart';
 import '../../models/food_entry.dart';
 import '../../models/activity_entry.dart';
+import '../../models/weight_entry.dart';
 
 /// Data Access Object for food and activity entries
 class LogDao {
@@ -119,5 +120,42 @@ class LogDao {
   Future<void> deleteActivityEntry(ActivityEntry entry) async {
     final db = await _appDatabase.database;
     await db.delete('activity_entries', where: 'id = ?', whereArgs: [entry.id]);
+  }
+
+  // Weight Entry operations
+
+  Future<List<WeightEntry>> getWeightEntriesForDateRange(
+    DateTime start,
+    DateTime end,
+  ) async {
+    final db = await _appDatabase.database;
+    final maps = await db.query(
+      'weight_entries',
+      where: 'date >= ? AND date <= ?',
+      whereArgs: [
+        start.toIso8601String().split('T')[0],
+        end.toIso8601String().split('T')[0],
+      ],
+      orderBy: 'date ASC',
+    );
+    return maps.map((map) => WeightEntry.fromMap(map)).toList();
+  }
+
+  Future<void> upsertWeightEntry(WeightEntry entry) async {
+    final db = await _appDatabase.database;
+    await db.insert(
+      'weight_entries',
+      entry.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteWeightEntry(DateTime date) async {
+    final db = await _appDatabase.database;
+    await db.delete(
+      'weight_entries',
+      where: 'date = ?',
+      whereArgs: [date.toIso8601String().split('T')[0]],
+    );
   }
 }

@@ -6,6 +6,7 @@ import '../../data/models/food_entry.dart';
 import '../../data/models/activity_entry.dart';
 import '../theme/app_theme.dart';
 import '../widgets/goals_summary_card.dart';
+import '../widgets/weight_card.dart';
 import '../widgets/food_item_row.dart';
 import '../widgets/activity_item_row.dart';
 import '../widgets/dialogs/add_entry_dialog.dart';
@@ -121,6 +122,72 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _showWeightDialog() {
+    final provider = context.read<MainProvider>();
+    final existing = provider.weightOnSelectedDate;
+    final controller = TextEditingController(
+      text: existing?.toStringAsFixed(1).replaceAll('.', ',') ?? '',
+    );
+
+    void submit(BuildContext dialogContext) {
+      final value = double.tryParse(controller.text.replaceAll(',', '.'));
+      if (value != null && value > 20 && value < 400) {
+        provider.saveWeight(value);
+        Navigator.of(dialogContext).pop();
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Gewicht eintragen'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Am besten morgens nach dem Toilettengang wiegen. '
+              'Entscheidend ist der 7-Tage-Durchschnitt.',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Gewicht',
+                suffixText: 'kg',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => submit(dialogContext),
+            ),
+          ],
+        ),
+        actions: [
+          if (existing != null)
+            TextButton(
+              onPressed: () {
+                provider.deleteWeight();
+                Navigator.of(dialogContext).pop();
+              },
+              child: const Text('Löschen'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => submit(dialogContext),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openPhotoInput() {
     // Capture provider reference BEFORE navigation to avoid deactivated context error
     final provider = context.read<MainProvider>();
@@ -206,7 +273,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _changeDate(int days) {
     final provider = context.read<MainProvider>();
-    final newDate = provider.selectedDate.add(Duration(days: days));
+    final current = provider.selectedDate;
+    final newDate = DateTime(current.year, current.month, current.day + days);
     provider.changeDate(newDate);
   }
 
@@ -227,20 +295,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Consumer<MainProvider>(
       builder: (context, provider, child) {
-        // Show barcode scanner dialog when scanned food info is available
-        if (provider.scannedFoodInfo != null) {
+        final scannedFoodInfo = provider.scannedFoodInfo;
+        if (scannedFoodInfo != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (provider.scannedFoodInfo != scannedFoodInfo) return;
+            provider.clearScannedFoodInfo();
             showDialog(
               context: context,
               builder: (ctx) => BarcodeScannerResultDialog(
-                foodInfo: provider.scannedFoodInfo!,
+                foodInfo: scannedFoodInfo,
                 onConfirm: (grams) {
-                  provider.addScannedFoodItem(provider.scannedFoodInfo!, grams);
-                  provider.clearScannedFoodInfo();
+                  provider.addScannedFoodItem(scannedFoodInfo, grams);
                 },
-                onDismiss: () {
-                  provider.clearScannedFoodInfo();
-                },
+                onDismiss: () {},
               ),
             );
           });
@@ -327,11 +394,31 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: GoalsSummaryCard(
-                        netCalories: provider.netCalories,
+                        eatenCalories: provider.totalCalories,
+                        calorieBudget: provider.calorieBudget,
+                        burnedCalories: provider.totalBurned,
+                        activityAddedToBudget:
+                            provider.userProfile.eatBackActivityCalories,
                         totalProtein: provider.totalProtein,
                         totalCarbs: provider.totalCarbs,
                         totalFat: provider.totalFat,
                         goals: provider.goals,
+                        weekCalorieBalance: provider.weekCalorieBalance,
+                        weekLoggedDays: provider.weekLoggedDays,
+                      ),
+                    ),
+                  ),
+
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: WeightCard(
+                        weightOnSelectedDate: provider.weightOnSelectedDate,
+                        averageThisWeek: provider.weightAverage7Days,
+                        averagePreviousWeek:
+                            provider.weightAveragePrevious7Days,
+                        lowerIsBetter: provider.userProfile.goal.isDeficit,
+                        onTap: _showWeightDialog,
                       ),
                     ),
                   ),

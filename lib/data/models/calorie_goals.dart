@@ -4,13 +4,20 @@ class CalorieGoals {
   final int proteinGrams;
   final int carbsGrams;
   final int fatGrams;
+  final int maintenanceCalories;
 
   const CalorieGoals({
     this.calories = 0,
     this.proteinGrams = 0,
     this.carbsGrams = 0,
     this.fatGrams = 0,
+    this.maintenanceCalories = 0,
   });
+
+  String toPromptSummary() {
+    return '$calories kcal (Erhaltungsbedarf ca. $maintenanceCalories kcal), '
+        'Protein ${proteinGrams}g, Kohlenhydrate ${carbsGrams}g, Fett ${fatGrams}g';
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -18,6 +25,7 @@ class CalorieGoals {
       'proteinGrams': proteinGrams,
       'carbsGrams': carbsGrams,
       'fatGrams': fatGrams,
+      'maintenanceCalories': maintenanceCalories,
     };
   }
 
@@ -27,6 +35,7 @@ class CalorieGoals {
       proteinGrams: json['proteinGrams'] as int? ?? 0,
       carbsGrams: json['carbsGrams'] as int? ?? 0,
       fatGrams: json['fatGrams'] as int? ?? 0,
+      maintenanceCalories: json['maintenanceCalories'] as int? ?? 0,
     );
   }
 }

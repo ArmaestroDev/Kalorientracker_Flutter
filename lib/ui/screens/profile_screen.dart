@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/user_profile.dart';
 import '../../data/models/enums.dart';
+import '../../logic/goals_calculator.dart';
 
 class ProfileScreen extends StatefulWidget {
   final UserProfile initialProfile;
@@ -24,11 +25,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   late TextEditingController _ageController;
   late TextEditingController _weightController;
   late TextEditingController _heightController;
+  late TextEditingController _bodyFatController;
 
   late AiProvider _selectedProvider;
   late Gender _gender;
   late ActivityLevel _activityLevel;
   late FitnessGoal _goal;
+  late bool _eatBackActivityCalories;
 
   @override
   void initState() {
@@ -61,6 +64,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
           : '',
     );
 
+    _bodyFatController = TextEditingController(
+      text: widget.initialProfile.bodyFatPercent > 0
+          ? _formatNumber(widget.initialProfile.bodyFatPercent)
+          : '',
+    );
+    _weightController.text = widget.initialProfile.weightKg > 0
+        ? _formatNumber(widget.initialProfile.weightKg)
+        : '';
+    _heightController.text = widget.initialProfile.heightCm > 0
+        ? _formatNumber(widget.initialProfile.heightCm)
+        : '';
+    for (final controller in [
+      _ageController,
+      _weightController,
+      _heightController,
+      _bodyFatController,
+    ]) {
+      controller.addListener(() => setState(() {}));
+    }
+
+    _eatBackActivityCalories = widget.initialProfile.eatBackActivityCalories;
     _selectedProvider = widget.initialProfile.selectedProvider;
     _gender = widget.initialProfile.gender;
     _activityLevel = widget.initialProfile.activityLevel;
@@ -76,31 +100,90 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _ageController.dispose();
     _weightController.dispose();
     _heightController.dispose();
+    _bodyFatController.dispose();
     super.dispose();
   }
 
-  bool get _isFormValid {
-    final age = int.tryParse(_ageController.text) ?? 0;
-    final weight = double.tryParse(_weightController.text) ?? 0.0;
-    final height = double.tryParse(_heightController.text) ?? 0.0;
-    return age > 0 && weight > 0.0 && height > 0.0;
+  static String _formatNumber(double value) {
+    final text = value == value.roundToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toStringAsFixed(1);
+    return text.replaceAll('.', ',');
   }
 
-  void _save() {
-    final profile = UserProfile(
+  static double _parseNumber(String text) =>
+      double.tryParse(text.trim().replaceAll(',', '.')) ?? 0.0;
+
+  bool get _isFormValid => _buildProfile().hasBodyData;
+
+  void _save() => widget.onSave(_buildProfile());
+
+  UserProfile _buildProfile() {
+    return UserProfile(
       geminiApiKey: _geminiApiKeyController.text,
       claudeApiKey: _claudeApiKeyController.text,
       openaiApiKey: _openaiApiKeyController.text,
       grokApiKey: _grokApiKeyController.text,
       selectedProvider: _selectedProvider,
-      age: int.tryParse(_ageController.text) ?? 0,
-      weightKg: double.tryParse(_weightController.text) ?? 0.0,
-      heightCm: double.tryParse(_heightController.text) ?? 0.0,
+      age: int.tryParse(_ageController.text.trim()) ?? 0,
+      weightKg: _parseNumber(_weightController.text),
+      heightCm: _parseNumber(_heightController.text),
+      bodyFatPercent: _parseNumber(_bodyFatController.text),
       gender: _gender,
       activityLevel: _activityLevel,
       goal: _goal,
+      eatBackActivityCalories: _eatBackActivityCalories,
     );
-    widget.onSave(profile);
+  }
+
+  Widget _buildGoalPreview(BuildContext context) {
+    final profile = _buildProfile();
+    final goals = GoalsCalculator.calculateGoals(profile);
+    if (goals.calories <= 0) return const SizedBox.shrink();
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final usesLeanMass = GoalsCalculator.leanMassKg(profile) != null;
+
+    return Card(
+      color: colorScheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Deine Ziele',
+              style: textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSecondaryContainer,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${goals.calories} kcal pro Tag',
+              style: textTheme.headlineSmall?.copyWith(
+                color: colorScheme.onSecondaryContainer,
+              ),
+            ),
+            Text(
+              'Protein ${goals.proteinGrams}g · Kohlenh. ${goals.carbsGrams}g · Fett ${goals.fatGrams}g',
+              style: textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSecondaryContainer,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Grundumsatz ${GoalsCalculator.calculateBmr(profile).round()} kcal '
+              '(${usesLeanMass ? 'Katch-McArdle, Magermasse' : 'Mifflin-St Jeor'}) · '
+              'Erhaltung ca. ${goals.maintenanceCalories} kcal',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSecondaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -207,7 +290,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 labelText: 'Größe (cm)',
                 border: OutlineInputBorder(),
               ),
-              keyboardType: TextInputType.number,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            TextFormField(
+              controller: _bodyFatController,
+              decoration: const InputDecoration(
+                labelText: 'Körperfett (%) – optional',
+                helperText:
+                    'Wenn bekannt, werden Grundumsatz und Protein genauer über die Magermasse berechnet',
+                helperMaxLines: 2,
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
             ),
             const SizedBox(height: 16),
 
@@ -280,7 +380,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 }
               },
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 8),
+
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Aktivitätskalorien zum Tagesziel addieren'),
+              subtitle: const Text(
+                'Nur aktivieren, wenn dein Aktivitätslevel dein Training NICHT schon enthält (z. B. "Sitzend"). Sonst wird Training doppelt gezählt.',
+              ),
+              value: _eatBackActivityCalories,
+              onChanged: (value) =>
+                  setState(() => _eatBackActivityCalories = value),
+            ),
+            const SizedBox(height: 16),
+
+            _buildGoalPreview(context),
+            const SizedBox(height: 16),
 
             // Save Button
             FilledButton(

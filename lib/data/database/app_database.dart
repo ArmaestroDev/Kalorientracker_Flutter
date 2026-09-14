@@ -21,7 +21,7 @@ class AppDatabase {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE food_entries(
@@ -58,6 +58,7 @@ class AppDatabase {
             last_used TEXT
           )
         ''');
+        await _createWeightTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -88,7 +89,19 @@ class AppDatabase {
             ''');
           } catch (_) {}
         }
+        if (oldVersion < 3) {
+          await _createWeightTable(db);
+        }
       },
     );
+  }
+
+  Future<void> _createWeightTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS weight_entries(
+        date TEXT PRIMARY KEY,
+        weight_kg REAL NOT NULL
+      )
+    ''');
   }
 }

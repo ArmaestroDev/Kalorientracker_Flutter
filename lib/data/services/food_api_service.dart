@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 /// Food nutrition info from APIs
-/// Food nutrition info from APIs
 class FoodNutritionInfo {
   final String name;
   final int calories;
@@ -79,8 +78,11 @@ class FoodApiService {
           final product = json['product'] as Map<String, dynamic>;
           final nutriments = product['nutriments'] as Map<String, dynamic>?;
 
-          final c100 =
-              (nutriments?['energy-kcal_100g'] as num?)?.toDouble() ?? 0.0;
+          final kcal100 = (nutriments?['energy-kcal_100g'] as num?)?.toDouble();
+          final kj100 =
+              (nutriments?['energy-kj_100g'] as num?)?.toDouble() ??
+              (nutriments?['energy_100g'] as num?)?.toDouble();
+          final c100 = kcal100 ?? (kj100 != null ? kj100 / 4.184 : 0.0);
           final p100 =
               (nutriments?['proteins_100g'] as num?)?.toDouble() ?? 0.0;
           final cb100 =
@@ -89,10 +91,7 @@ class FoodApiService {
 
           return FoodNutritionInfo(
             name: product['product_name'] as String? ?? 'Unbekanntes Produkt',
-            // OFF usually gives per 100g, so total calories for "1 portion" is ambiguous unless quantity known.
-            // For now, assume 100g OR just use the 100g values as the "calculated" values for now.
-            // A better approach would be to check serving size.
-            calories: c100.toInt(),
+            calories: c100.round(),
             protein: p100,
             carbs: cb100,
             fat: f100,

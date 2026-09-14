@@ -88,13 +88,7 @@ class ApiServiceRepository {
       if (type == 'food') {
         return UnifiedEntry(
           isFood: true,
-          foodInfo: FoodNutritionInfo(
-            name: json['name'] as String? ?? 'Unknown',
-            calories: (json['calories'] as num?)?.toInt() ?? 0,
-            protein: (json['protein'] as num?)?.toDouble() ?? 0.0,
-            carbs: (json['carbs'] as num?)?.toDouble() ?? 0.0,
-            fat: (json['fat'] as num?)?.toDouble() ?? 0.0,
-          ),
+          foodInfo: FoodNutritionInfo.fromJson(json),
         );
       } else if (type == 'activity') {
         return UnifiedEntry(
@@ -204,7 +198,8 @@ Description: "$description"
   String _buildActivityPrompt(String activityName) {
     return '''
 You are a fitness analysis assistant. Your task is to estimate the calories burned for a given activity. Respond ONLY with a valid JSON object.
-Assume the activity is performed by an average person.
+Assume the activity is performed by an average person. If a body weight is given in the input, use it.
+Estimate only the calories burned ABOVE resting metabolism (net), not the gross total.
 
 The JSON object must have this exact structure:
 {"name": "string", "calories_burned": integer}
@@ -246,6 +241,7 @@ Respond ONLY with a valid JSON object with this structure:
   "fat_100g": double
 }
 - If it's an ACTIVITY: {"type": "activity", "name": "string", "calories_burned": integer}
+  For activities, estimate only the calories burned ABOVE resting metabolism (net), not the gross total.
 
 RULES:
 1. NEVER respond with anything other than the JSON object.

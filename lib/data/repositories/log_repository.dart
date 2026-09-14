@@ -1,6 +1,7 @@
 import '../models/food_entry.dart';
 import '../models/activity_entry.dart';
 import '../models/food_item.dart';
+import '../models/weight_entry.dart';
 import '../database/dao/log_dao.dart';
 import '../database/dao/food_item_dao.dart';
 
@@ -34,6 +35,16 @@ class LogRepository {
       _logDao.updateActivityEntry(entry);
   Future<void> deleteActivityEntry(ActivityEntry entry) =>
       _logDao.deleteActivityEntry(entry);
+
+  // Weight Entries
+  Future<List<WeightEntry>> getWeightEntriesForDateRange(
+    DateTime start,
+    DateTime end,
+  ) => _logDao.getWeightEntriesForDateRange(start, end);
+  Future<void> saveWeightEntry(WeightEntry entry) =>
+      _logDao.upsertWeightEntry(entry);
+  Future<void> deleteWeightEntry(DateTime date) =>
+      _logDao.deleteWeightEntry(date);
 
   // Food Items (History/Database)
   Future<void> saveFoodItem(FoodItem item) => _foodItemDao.insertOrUpdate(item);

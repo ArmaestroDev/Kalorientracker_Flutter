@@ -15,6 +15,7 @@ import '../../data/services/grok_api_service.dart';
 import '../../data/services/food_api_service.dart';
 import '../../data/models/food_item.dart';
 import '../../data/models/ai_analysis_type.dart';
+import '../../data/models/weight_entry.dart';
 import '../goals_calculator.dart';
 
 /// Main state provider for the Kalorientracker app
@@ -32,7 +33,13 @@ class MainProvider extends ChangeNotifier {
        _apiServiceRepository = apiServiceRepository;
 
   // State
-  DateTime _selectedDate = DateTime.now();
+  DateTime _selectedDate = _today();
+
+  static DateTime _today() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
   List<FoodEntry> _foodEntries = [];
   List<ActivityEntry> _activityEntries = [];
   UserProfile _userProfile = const UserProfile();
@@ -41,6 +48,9 @@ class MainProvider extends ChangeNotifier {
   String? _errorMessage;
   FoodNutritionInfo? _scannedFoodInfo;
   String _currentTheme = 'Default';
+  List<WeightEntry> _weightEntries = [];
+  List<FoodEntry> _weekFoodEntries = [];
+  List<ActivityEntry> _weekActivityEntries = [];
 
   // Getters
   DateTime get selectedDate => _selectedDate;
@@ -62,6 +72,62 @@ class MainProvider extends ChangeNotifier {
       _activityEntries.fold(0, (sum, e) => sum + e.caloriesBurned);
   int get netCalories => totalCalories - totalBurned;
 
+  /// Daily budget. Logged activities are only added when the user opted in,
+  /// because the activity level multiplier already includes regular training.
+  int get calorieBudget =>
+      _goals.calories +
+      (_userProfile.eatBackActivityCalories ? totalBurned : 0);
+  int get remainingCalories => calorieBudget - totalCalories;
+
+  DateTime get weekStart =>
+      _daysBefore(_selectedDate, _selectedDate.weekday - DateTime.monday);
+
+  static DateTime _daysBefore(DateTime date, int days) =>
+      DateTime(date.year, date.month, date.day - days);
+
+  /// Days of the current week (up to the selected date) that have food logged
+  int get weekLoggedDays =>
+      _weekFoodEntries.map((e) => _dayKey(e.date)).toSet().length;
+
+  /// Sum of (eaten - budget) over logged days this week. Negative = deficit.
+  int get weekCalorieBalance {
+    if (_goals.calories <= 0) return 0;
+    final loggedDays = _weekFoodEntries.map((e) => _dayKey(e.date)).toSet();
+    final eaten = _weekFoodEntries.fold(0, (sum, e) => sum + e.calories);
+    final burned = _userProfile.eatBackActivityCalories
+        ? _weekActivityEntries
+              .where((a) => loggedDays.contains(_dayKey(a.date)))
+              .fold(0, (sum, a) => sum + a.caloriesBurned)
+        : 0;
+    return eaten - (_goals.calories * loggedDays.length + burned);
+  }
+
+  double? get weightOnSelectedDate {
+    final key = _dayKey(_selectedDate);
+    for (final w in _weightEntries) {
+      if (_dayKey(w.date) == key) return w.weightKg;
+    }
+    return null;
+  }
+
+  double? get weightAverage7Days => _averageWeight(0);
+  double? get weightAveragePrevious7Days => _averageWeight(7);
+
+  double? _averageWeight(int daysBack) {
+    final end = _daysBefore(_selectedDate, daysBack);
+    final start = _daysBefore(end, 6);
+    final values = _weightEntries
+        .where((w) => !w.date.isBefore(start) && !w.date.isAfter(end))
+        .map((w) => w.weightKg)
+        .toList();
+    if (values.isEmpty) return null;
+    return values.reduce((a, b) => a + b) / values.length;
+  }
+
+  static String _dayKey(DateTime d) => d.toIso8601String().split('T')[0];
+
+  static int _scale(double value, double factor) => (value * factor).round();
+
   /// Initialize the provider by loading saved data
   Future<void> loadInitialData() async {
     _isLoading = true;
@@ -70,6 +136,10 @@ class MainProvider extends ChangeNotifier {
     try {
       _userProfile = await _prefsRepository.loadUserProfile();
       _goals = await _prefsRepository.loadCalorieGoals();
+      if (_userProfile.hasBodyData) {
+        _goals = GoalsCalculator.calculateGoals(_userProfile);
+        await _prefsRepository.saveCalorieGoals(_goals);
+      }
       _currentTheme = await _prefsRepository.loadTheme();
       _initializeApiService(_userProfile);
       await _loadEntriesForDate(_selectedDate);
@@ -129,6 +199,48 @@ class MainProvider extends ChangeNotifier {
   Future<void> _loadEntriesForDate(DateTime date) async {
     _foodEntries = await _logRepository.getFoodEntriesForDate(date);
     _activityEntries = await _logRepository.getActivityEntriesForDate(date);
+    _weekFoodEntries = await _logRepository.getFoodEntriesForDateRange(
+      weekStart,
+      date,
+    );
+    _weekActivityEntries = await _logRepository.getActivityEntriesForDateRange(
+      weekStart,
+      date,
+    );
+    _weightEntries = await _logRepository.getWeightEntriesForDateRange(
+      _daysBefore(date, 13),
+      date,
+    );
+  }
+
+  /// Log body weight for the selected date. The profile weight follows the
+  /// 7-day average so goals adapt without daily water-weight noise.
+  Future<void> saveWeight(double weightKg) async {
+    await _logRepository.saveWeightEntry(
+      WeightEntry(date: _selectedDate, weightKg: weightKg),
+    );
+    await _loadEntriesForDate(_selectedDate);
+    await _syncProfileWeightToAverage();
+    notifyListeners();
+  }
+
+  Future<void> deleteWeight() async {
+    await _logRepository.deleteWeightEntry(_selectedDate);
+    await _loadEntriesForDate(_selectedDate);
+    notifyListeners();
+  }
+
+  Future<void> _syncProfileWeightToAverage() async {
+    if (_dayKey(_selectedDate) != _dayKey(_today())) return;
+    final average = weightAverage7Days;
+    if (average == null || !_userProfile.hasBodyData) return;
+    final rounded = (average * 10).round() / 10;
+    if (rounded == _userProfile.weightKg) return;
+    final profile = _userProfile.copyWith(weightKg: rounded);
+    _goals = GoalsCalculator.calculateGoals(profile);
+    _userProfile = profile;
+    await _prefsRepository.saveUserProfile(profile);
+    await _prefsRepository.saveCalorieGoals(_goals);
   }
 
   /// Change the selected date and load entries
@@ -164,9 +276,9 @@ class MainProvider extends ChangeNotifier {
         final newEntry = FoodEntry(
           name: nutritionInfo.name,
           calories: nutritionInfo.calories,
-          protein: nutritionInfo.protein.toInt(),
-          carbs: nutritionInfo.carbs.toInt(),
-          fat: nutritionInfo.fat.toInt(),
+          protein: nutritionInfo.protein.round(),
+          carbs: nutritionInfo.carbs.round(),
+          fat: nutritionInfo.fat.round(),
           date: _selectedDate,
           // Assuming AI gives us the total values, we might not always know exact gram amount
           // unless parsed from name. But we stored normalized values for next time.
@@ -256,10 +368,13 @@ class MainProvider extends ChangeNotifier {
     final factor = grams / 100.0;
     final newEntry = FoodEntry(
       name: '${foodInfo.name} (${grams}g)',
-      calories: (foodInfo.calories * factor).toInt(),
-      protein: (foodInfo.protein * factor).toInt(),
-      carbs: (foodInfo.carbs * factor).toInt(),
-      fat: (foodInfo.fat * factor).toInt(),
+      calories: _scale(
+        foodInfo.caloriesPer100g ?? foodInfo.calories.toDouble(),
+        factor,
+      ),
+      protein: _scale(foodInfo.protein, factor),
+      carbs: _scale(foodInfo.carbs, factor),
+      fat: _scale(foodInfo.fat, factor),
       date: _selectedDate,
       amount: grams.toDouble(),
       unit: 'g',
@@ -308,10 +423,10 @@ class MainProvider extends ChangeNotifier {
 
     final newEntry = FoodEntry(
       name: displayName,
-      calories: (item.caloriesPer100g * factor).toInt(),
-      protein: (item.proteinPer100g * factor).toInt(),
-      carbs: (item.carbsPer100g * factor).toInt(),
-      fat: (item.fatPer100g * factor).toInt(),
+      calories: _scale(item.caloriesPer100g, factor),
+      protein: _scale(item.proteinPer100g, factor),
+      carbs: _scale(item.carbsPer100g, factor),
+      fat: _scale(item.fatPer100g, factor),
       date: _selectedDate,
       amount: amount,
       unit: unit,
@@ -402,9 +517,9 @@ class MainProvider extends ChangeNotifier {
           final newEntry = FoodEntry(
             name: foodInfo.name,
             calories: foodInfo.calories,
-            protein: foodInfo.protein.toInt(),
-            carbs: foodInfo.carbs.toInt(),
-            fat: foodInfo.fat.toInt(),
+            protein: foodInfo.protein.round(),
+            carbs: foodInfo.carbs.round(),
+            fat: foodInfo.fat.round(),
             date: _selectedDate,
           );
           await _logRepository.addFoodEntry(newEntry);
@@ -459,9 +574,9 @@ class MainProvider extends ChangeNotifier {
         final newEntry = FoodEntry(
           name: foodInfo.name,
           calories: foodInfo.calories,
-          protein: foodInfo.protein.toInt(),
-          carbs: foodInfo.carbs.toInt(),
-          fat: foodInfo.fat.toInt(),
+          protein: foodInfo.protein.round(),
+          carbs: foodInfo.carbs.round(),
+          fat: foodInfo.fat.round(),
           date: _selectedDate,
         );
         await _logRepository.addFoodEntry(newEntry);
@@ -496,9 +611,9 @@ class MainProvider extends ChangeNotifier {
         final updatedEntry = foodEntry.copyWith(
           name: nutritionInfo.name,
           calories: nutritionInfo.calories,
-          protein: nutritionInfo.protein.toInt(),
-          carbs: nutritionInfo.carbs.toInt(),
-          fat: nutritionInfo.fat.toInt(),
+          protein: nutritionInfo.protein.round(),
+          carbs: nutritionInfo.carbs.round(),
+          fat: nutritionInfo.fat.round(),
         );
         await _logRepository.updateFoodEntry(updatedEntry);
         await _loadEntriesForDate(_selectedDate);
@@ -616,7 +731,7 @@ class MainProvider extends ChangeNotifier {
       switch (type) {
         case AiAnalysisType.dayReview:
         case AiAnalysisType.nextMeal:
-          start = DateTime(now.year, now.month, now.day);
+          start = _selectedDate;
           end = start;
           analysisContext = type == AiAnalysisType.dayReview
               ? "Daily Review: Summarize the day's nutrition and activity."
@@ -661,10 +776,13 @@ class MainProvider extends ChangeNotifier {
       // Build prompt
       final sb = StringBuffer();
       sb.writeln(analysisContext);
+      sb.writeln("User Profile: ${_userProfile.toPromptSummary()}");
+      sb.writeln("Daily Goals: ${_goals.toPromptSummary()}");
       sb.writeln(
-        "User Profile: $_userProfile",
-      ); // Ensure toString() is meaningful
-      sb.writeln("Goals: $_goals");
+        _userProfile.eatBackActivityCalories
+            ? "Logged activity calories are added to the daily budget."
+            : "Regular training is already included in the goal via the activity level; logged activities are NOT added to the daily budget.",
+      );
       sb.writeln(
         "Data Period: ${start.toIso8601String()} to ${end.toIso8601String()}",
       );
