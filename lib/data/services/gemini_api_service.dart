@@ -36,23 +36,99 @@ class GeminiApiService implements GenerativeService {
       contents.add({'role': message.isUser ? 'user' : 'model', 'parts': parts});
     }
 
-    final body = {
-      'system_instruction': {
-        'parts': [
-          {'text': request.system},
-        ],
-      },
-      'contents': contents,
-      'generationConfig': {
-        'maxOutputTokens': request.maxTokens,
-        if (request.jsonOutput) 'responseMimeType': 'application/json',
-      },
-    };
+    for (var round = 0; round <= GenerativeService.maxToolRounds; round++) {
+      final json = await _post({
+        'system_instruction': {
+          'parts': [
+            {'text': request.system},
+          ],
+        },
+        'contents': contents,
+        if (request.usesTools)
+          'tools': [
+            {
+              'functionDeclarations': [
+                for (final tool in request.tools)
+                  {
+                    'name': tool.name,
+                    'description': tool.description,
+                    'parameters': tool.parameters,
+                  },
+              ],
+            },
+          ],
+        'generationConfig': {
+          'maxOutputTokens': request.maxTokens,
+          if (request.jsonOutput) 'responseMimeType': 'application/json',
+        },
+      }, request);
 
+      final blockReason = (json['promptFeedback'] as Map?)?['blockReason'];
+      if (blockReason != null) {
+        throw AiException(
+          'Gemini hat die Anfrage blockiert ($blockReason). Formuliere sie bitte anders.',
+        );
+      }
+      final candidates = json['candidates'] as List<dynamic>? ?? [];
+      if (candidates.isEmpty) {
+        throw const AiException('Gemini hat keine Antwort geliefert.');
+      }
+      final candidate = candidates.first as Map<String, dynamic>;
+      final content = candidate['content'] as Map<String, dynamic>?;
+      final parts = (content?['parts'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      final calls = parts
+          .where((part) => part['functionCall'] is Map)
+          .map((part) => part['functionCall'] as Map<String, dynamic>)
+          .toList();
+
+      if (request.usesTools && calls.isNotEmpty) {
+        contents.add({...content!, 'role': 'model'});
+        contents.add({
+          'role': 'user',
+          'parts': [
+            for (final call in calls)
+              {
+                'functionResponse': {
+                  if (call['id'] != null) 'id': call['id'],
+                  'name': call['name'],
+                  'response': await GenerativeService.runTool(
+                    request,
+                    call['name'] as String? ?? '',
+                    (call['args'] as Map?)?.cast<String, dynamic>() ?? {},
+                  ),
+                },
+              },
+          ],
+        });
+        continue;
+      }
+
+      final text = parts
+          .where((part) => part['thought'] != true)
+          .map((part) => part['text'] as String? ?? '')
+          .join();
+      if (text.trim().isEmpty) {
+        final reason = candidate['finishReason'];
+        throw AiException(
+          reason == 'MAX_TOKENS'
+              ? 'Gemini-Antwort wurde abgeschnitten. Bitte erneut versuchen.'
+              : 'Gemini hat keine Antwort geliefert ($reason).',
+        );
+      }
+      return text;
+    }
+    throw GenerativeService.tooManyToolRounds(providerName);
+  }
+
+  Future<Map<String, dynamic>> _post(
+    Map<String, dynamic> body,
+    AiRequest request,
+  ) async {
     final uri = Uri.parse(
       'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent',
     );
-
     final http.Response response;
     try {
       response = await _client
@@ -84,36 +160,6 @@ class GeminiApiService implements GenerativeService {
         responseBody,
       );
     }
-
-    final json = jsonDecode(responseBody) as Map<String, dynamic>;
-    final blockReason = (json['promptFeedback'] as Map?)?['blockReason'];
-    if (blockReason != null) {
-      throw AiException(
-        'Gemini hat die Anfrage blockiert ($blockReason). Formuliere sie bitte anders.',
-      );
-    }
-    final candidates = json['candidates'] as List<dynamic>? ?? [];
-    if (candidates.isEmpty) {
-      throw const AiException('Gemini hat keine Antwort geliefert.');
-    }
-    final candidate = candidates.first as Map<String, dynamic>;
-    final parts =
-        (candidate['content'] as Map<String, dynamic>?)?['parts']
-            as List<dynamic>? ??
-        [];
-    final text = parts
-        .whereType<Map<String, dynamic>>()
-        .where((part) => part['thought'] != true)
-        .map((part) => part['text'] as String? ?? '')
-        .join();
-    if (text.trim().isEmpty) {
-      final reason = candidate['finishReason'];
-      throw AiException(
-        reason == 'MAX_TOKENS'
-            ? 'Gemini-Antwort wurde abgeschnitten. Bitte erneut versuchen.'
-            : 'Gemini hat keine Antwort geliefert ($reason).',
-      );
-    }
-    return text;
+    return jsonDecode(responseBody) as Map<String, dynamic>;
   }
 }

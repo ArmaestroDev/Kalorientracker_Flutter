@@ -2,6 +2,27 @@ import 'dart:convert';
 import 'dart:typed_data';
 import '../models/chat_message.dart';
 
+/// A function the model may call to fetch data
+class AiTool {
+  final String name;
+  final String description;
+
+  /// JSON schema of the arguments (object with properties)
+  final Map<String, dynamic> parameters;
+
+  const AiTool({
+    required this.name,
+    required this.description,
+    required this.parameters,
+  });
+}
+
+typedef ToolExecutor =
+    Future<Map<String, dynamic>> Function(
+      String name,
+      Map<String, dynamic> arguments,
+    );
+
 /// A provider-independent request to a generative AI model
 class AiRequest {
   final String system;
@@ -9,6 +30,8 @@ class AiRequest {
   final bool jsonOutput;
   final Uint8List? imageBytes;
   final int maxTokens;
+  final List<AiTool> tools;
+  final ToolExecutor? onToolCall;
 
   const AiRequest({
     required this.system,
@@ -16,7 +39,11 @@ class AiRequest {
     this.jsonOutput = false,
     this.imageBytes,
     this.maxTokens = 16000,
+    this.tools = const [],
+    this.onToolCall,
   });
+
+  bool get usesTools => tools.isNotEmpty && onToolCall != null;
 
   AiRequest.single({
     required this.system,
@@ -24,7 +51,9 @@ class AiRequest {
     this.jsonOutput = false,
     this.imageBytes,
     this.maxTokens = 16000,
-  }) : messages = [ChatMessage(role: ChatRole.user, text: prompt)];
+  }) : messages = [ChatMessage(role: ChatRole.user, text: prompt)],
+       tools = const [],
+       onToolCall = null;
 }
 
 /// Error with a user-facing German message
@@ -43,6 +72,25 @@ abstract class GenerativeService {
   Future<String> generate(AiRequest request);
 
   static const textTimeout = Duration(seconds: 120);
+  static const maxToolRounds = 8;
+
+  static AiException tooManyToolRounds(String provider) => AiException(
+    '$provider hat zu viele Datenabfragen gebraucht. Formuliere die Frage bitte genauer.',
+  );
+
+  /// Runs a tool and never throws, so the model always gets an answer
+  static Future<Map<String, dynamic>> runTool(
+    AiRequest request,
+    String name,
+    Map<String, dynamic> arguments,
+  ) async {
+    try {
+      return await request.onToolCall!(name, arguments);
+    } catch (e) {
+      return {'error': e.toString()};
+    }
+  }
+
   static const imageTimeout = Duration(seconds: 180);
 
   /// Turns an HTTP error response into a message the user can act on

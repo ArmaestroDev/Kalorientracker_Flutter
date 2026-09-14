@@ -142,9 +142,17 @@ class ApiServiceRepository {
   Future<String> chat({
     required String system,
     required List<ChatMessage> messages,
+    List<AiTool> tools = const [],
+    ToolExecutor? onToolCall,
   }) {
     return _service.generate(
-      AiRequest(system: system, messages: messages, maxTokens: 16000),
+      AiRequest(
+        system: system,
+        messages: messages,
+        maxTokens: 16000,
+        tools: tools,
+        onToolCall: onToolCall,
+      ),
     );
   }
 

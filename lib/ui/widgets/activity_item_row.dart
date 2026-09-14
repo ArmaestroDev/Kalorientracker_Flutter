@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/models/activity_entry.dart';
+import '../theme/app_theme.dart';
 
 class ActivityItemRow extends StatelessWidget {
   final ActivityEntry activity;
@@ -17,8 +18,13 @@ class ActivityItemRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      clipBehavior: Clip.antiAlias,
       child: ListTile(
-        leading: const Icon(Icons.directions_run),
+        onTap: onEdit,
+        leading: Icon(
+          Icons.directions_run,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
         title: Text(activity.name),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
@@ -26,7 +32,7 @@ class ActivityItemRow extends StatelessWidget {
             Text(
               '-${activity.caloriesBurned} kcal',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Colors.green,
+                color: AppColors.of(context).success,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -50,9 +56,9 @@ class ActivityItemRow extends StatelessWidget {
                   value: 'delete',
                   child: Row(
                     children: [
-                      Icon(Icons.delete, size: 20, color: Colors.red),
+                      Icon(Icons.delete_outline, size: 20),
                       SizedBox(width: 8),
-                      Text('Löschen', style: TextStyle(color: Colors.red)),
+                      Text('Löschen'),
                     ],
                   ),
                 ),

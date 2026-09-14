@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 class WeightCard extends StatelessWidget {
   final double? weightOnSelectedDate;
   final double? averageThisWeek;
   final double? averagePreviousWeek;
-  final bool lowerIsBetter;
+
+  /// true = losing is good, false = gaining is good, null = neutral
+  final bool? lowerIsBetter;
   final VoidCallback onTap;
 
   const WeightCard({
@@ -68,9 +71,11 @@ class WeightCard extends StatelessWidget {
                       '${change > 0 ? '+' : ''}${change.toStringAsFixed(1).replaceAll('.', ',')} kg',
                       style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: (change <= 0) == lowerIsBetter
-                            ? Colors.green.shade600
-                            : colorScheme.error,
+                        color: lowerIsBetter == null || change == 0
+                            ? colorScheme.onSurface
+                            : (change < 0) == lowerIsBetter
+                            ? AppColors.of(context).success
+                            : AppColors.of(context).danger,
                       ),
                     ),
                     Text('ggü. Vorwoche', style: textTheme.labelSmall),

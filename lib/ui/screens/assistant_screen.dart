@@ -33,6 +33,11 @@ class _AssistantScreenState extends State<AssistantScreen> {
       'Was soll ich als Nächstes essen? Schlag mir 2–3 konkrete Optionen vor, die in mein restliches Budget und zu meinem Proteinziel passen und zu meinem Alltag passen. Nenne jeweils ungefähre kcal und Protein.',
     ),
     _QuickAction(
+      Icons.account_balance_wallet_outlined,
+      'Wochenbudget',
+      'Wie viele Kalorien habe ich diese Woche schon gegessen und wie viele bleiben mir noch? Wie verteile ich den Rest sinnvoll auf die übrigen Tage, auch mit Blick aufs Wochenende?',
+    ),
+    _QuickAction(
       Icons.today,
       'Tagesrückblick',
       'Gib mir einen kurzen Rückblick auf diesen Tag: Wie stehe ich bei Kalorien und Protein, was lief gut und was mache ich beim nächsten Mal besser?',
@@ -50,7 +55,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     _QuickAction(
       Icons.calendar_month,
       'Monatsrückblick',
-      'Analysiere meine letzten 30 Tage: Bin ich auf Kurs zu meinem Ziel? Was sind wiederkehrende Muster, wie konsequent logge ich, und was sollte ich ändern?',
+      'Analysiere meine letzten 30 Tage wochenweise: Bin ich auf Kurs zu meinem Ziel? Welche Lebensmittel liefern die meisten Kalorien, was sind wiederkehrende Muster, wie konsequent logge ich, und was sollte ich ändern?',
     ),
   ];
 
@@ -137,7 +142,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
                           itemCount: itemCount,
                           itemBuilder: (context, index) {
                             if (index >= messages.length) {
-                              return const _TypingBubble();
+                              return _TypingBubble(
+                                status: provider.assistantStatus,
+                              );
                             }
                             final message = messages[index];
                             final isLast = index == messages.length - 1;
@@ -355,7 +362,9 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _TypingBubble extends StatelessWidget {
-  const _TypingBubble();
+  final String? status;
+
+  const _TypingBubble({this.status});
 
   @override
   Widget build(BuildContext context) {
@@ -379,7 +388,7 @@ class _TypingBubble extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Text(
-              'Denkt nach …',
+              status ?? 'Denkt nach …',
               style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
           ],

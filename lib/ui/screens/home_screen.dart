@@ -19,26 +19,19 @@ import '../widgets/dialogs/food_recall_dialog.dart';
 import '../../data/models/food_item.dart';
 import '../../logic/number_format.dart';
 import '../widgets/app_text_field.dart';
-import 'assistant_screen.dart';
 import 'profile_screen.dart';
 import 'photo_input_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onOpenHistory;
+
+  const HomeScreen({super.key, this.onOpenHistory});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<MainProvider>().loadInitialData();
-    });
-  }
-
   void _showAddEntryDialog() {
     showDialog(
       context: context,
@@ -322,14 +315,19 @@ class _HomeScreenState extends State<HomeScreen> {
             title: const Text('Kalorientracker'),
             actions: [
               PopupMenuButton<String>(
-                icon: const Icon(Icons.palette),
-                onSelected: (theme) => provider.changeTheme(theme),
-                itemBuilder: (context) => AppTheme.themes.keys
-                    .map(
-                      (theme) =>
-                          PopupMenuItem(value: theme, child: Text(theme)),
-                    )
-                    .toList(),
+                tooltip: 'Farbschema',
+                icon: const Icon(Icons.palette_outlined),
+                onSelected: provider.changeTheme,
+                itemBuilder: (context) => [
+                  for (final option in AppTheme.options)
+                    CheckedPopupMenuItem(
+                      value: option.key,
+                      checked:
+                          AppTheme.option(provider.currentTheme).key ==
+                          option.key,
+                      child: Text(option.label),
+                    ),
+                ],
               ),
               IconButton(
                 icon: const Icon(Icons.person),
@@ -407,8 +405,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         totalCarbs: provider.totalCarbs,
                         totalFat: provider.totalFat,
                         goals: provider.goals,
-                        weekCalorieBalance: provider.weekCalorieBalance,
-                        weekLoggedDays: provider.weekLoggedDays,
+                        week: provider.weekStatus,
+                        onOpenHistory: widget.onOpenHistory,
                       ),
                     ),
                   ),
@@ -421,7 +419,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         averageThisWeek: provider.weightAverage7Days,
                         averagePreviousWeek:
                             provider.weightAveragePrevious7Days,
-                        lowerIsBetter: provider.userProfile.goal.isDeficit,
+                        lowerIsBetter:
+                            provider.userProfile.goal.calorieModifier == 0
+                            ? null
+                            : provider.userProfile.goal.isDeficit,
                         onTap: _showWeightDialog,
                       ),
                     ),
@@ -491,7 +492,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             '-${provider.totalBurned} kcal',
                             style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: Colors.green),
+                                ?.copyWith(
+                                  color: AppColors.of(context).success,
+                                ),
                           ),
                         ],
                       ),
@@ -569,38 +572,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
             ],
           ),
-          floatingActionButtonLocation:
-              FloatingActionButtonLocation.centerFloat,
-          floatingActionButton: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                FloatingActionButton(
-                  heroTag: 'ai_assistant_fab',
-                  tooltip: 'Dein Coach',
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const AssistantScreen(),
-                      ),
-                    );
-                  },
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.tertiaryContainer,
-                  foregroundColor: Theme.of(
-                    context,
-                  ).colorScheme.onTertiaryContainer,
-                  child: const Icon(Icons.auto_awesome_outlined),
-                ),
-                FloatingActionButton(
-                  heroTag: 'add_entry_fab',
-                  onPressed: _showAddEntryDialog,
-                  child: const Icon(Icons.add),
-                ),
-              ],
-            ),
+          floatingActionButton: FloatingActionButton.extended(
+            heroTag: 'add_entry_fab',
+            onPressed: _showAddEntryDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('Eintrag'),
           ),
         );
       },

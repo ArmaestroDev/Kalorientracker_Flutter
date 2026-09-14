@@ -16,6 +16,9 @@ import '../../data/services/claude_api_service.dart';
 import '../../data/services/openai_compatible_service.dart';
 import '../../data/services/food_api_service.dart';
 import '../assistant_context_builder.dart';
+import '../coach_tools.dart';
+import '../history_data.dart';
+import '../nutrition_stats.dart';
 import '../goals_calculator.dart';
 
 /// Main state provider for the Kalorientracker app
@@ -53,6 +56,8 @@ class MainProvider extends ChangeNotifier {
   List<ActivityEntry> _weekActivityEntries = [];
   List<ChatMessage> _assistantMessages = [];
   bool _assistantBusy = false;
+  String? _assistantStatus;
+  int _dataVersion = 0;
 
   // Getters
   DateTime get selectedDate => _selectedDate;
@@ -67,6 +72,10 @@ class MainProvider extends ChangeNotifier {
   List<ChatMessage> get assistantMessages =>
       List.unmodifiable(_assistantMessages);
   bool get assistantBusy => _assistantBusy;
+  String? get assistantStatus => _assistantStatus;
+
+  /// Increments whenever logged data may have changed, so screens can reload
+  int get dataVersion => _dataVersion;
 
   // Computed values
   int get totalCalories => _foodEntries.fold(0, (sum, e) => sum + e.calories);
@@ -90,22 +99,18 @@ class MainProvider extends ChangeNotifier {
   static DateTime _daysBefore(DateTime date, int days) =>
       DateTime(date.year, date.month, date.day - days);
 
-  /// Days of the current week (up to the selected date) that have food logged
-  int get weekLoggedDays =>
-      _weekFoodEntries.map((e) => _dayKey(e.date)).toSet().length;
-
-  /// Sum of (eaten - budget) over logged days this week. Negative = deficit.
-  int get weekCalorieBalance {
-    if (_goals.calories <= 0) return 0;
-    final loggedDays = _weekFoodEntries.map((e) => _dayKey(e.date)).toSet();
-    final eaten = _weekFoodEntries.fold(0, (sum, e) => sum + e.calories);
-    final burned = _userProfile.eatBackActivityCalories
-        ? _weekActivityEntries
-              .where((a) => loggedDays.contains(_dayKey(a.date)))
-              .fold(0, (sum, a) => sum + a.caloriesBurned)
-        : 0;
-    return eaten - (_goals.calories * loggedDays.length + burned);
-  }
+  /// Week budget, consumption and what is left for the week of the selected date
+  WeekStatus get weekStatus => NutritionStats.weekStatus(
+    NutritionStats.daily(
+      _weekFoodEntries,
+      _weekActivityEntries,
+      weekStart,
+      _selectedDate,
+    ),
+    _selectedDate,
+    dailyGoal: _goals.calories,
+    eatBackActivity: _userProfile.eatBackActivityCalories,
+  );
 
   double? get weightOnSelectedDate {
     final key = _dayKey(_selectedDate);
@@ -224,6 +229,7 @@ class MainProvider extends ChangeNotifier {
       _daysBefore(date, 13),
       date,
     );
+    _dataVersion++;
   }
 
   /// Log body weight for the selected date. The profile weight follows the
@@ -641,9 +647,12 @@ class MainProvider extends ChangeNotifier {
             )
           : _assistantMessages;
       final firstUser = history.indexWhere((m) => m.isUser);
+      final tools = _coachTools();
       final reply = await _apiServiceRepository.chat(
         system: system,
         messages: firstUser <= 0 ? history : history.sublist(firstUser),
+        tools: CoachTools.definitions,
+        onToolCall: tools.execute,
       );
       _assistantMessages = [
         ..._assistantMessages,
@@ -662,24 +671,47 @@ class MainProvider extends ChangeNotifier {
     }
 
     _assistantBusy = false;
+    _assistantStatus = null;
     notifyListeners();
   }
 
+  CoachTools _coachTools() => CoachTools(
+    loadFoods: _logRepository.getFoodEntriesForDateRange,
+    loadActivities: _logRepository.getActivityEntriesForDateRange,
+    loadWeights: _logRepository.getWeightEntriesForDateRange,
+    profile: _userProfile,
+    goals: _goals,
+    today: _today(),
+    onStatus: (status) {
+      _assistantStatus = status;
+      notifyListeners();
+    },
+  );
+
   Future<String> _buildAssistantContext() async {
     final now = DateTime.now();
-    final historyStart = _daysBefore(_selectedDate, 30);
+    final today = dayOnly(now);
+    final recentStart = addDays(today, -7);
+    final weekStartDate = startOfWeek(_selectedDate);
+    final loadStart = recentStart.isBefore(weekStartDate)
+        ? recentStart
+        : weekStartDate;
+    final loadEnd = _selectedDate.isAfter(today) ? _selectedDate : today;
+
     final foods = await _logRepository.getFoodEntriesForDateRange(
-      historyStart,
-      _selectedDate,
+      loadStart,
+      loadEnd,
     );
     final activities = await _logRepository.getActivityEntriesForDateRange(
-      historyStart,
-      _selectedDate,
+      loadStart,
+      loadEnd,
     );
+    final days = NutritionStats.daily(foods, activities, loadStart, loadEnd);
     final weights = await _logRepository.getWeightEntriesForDateRange(
-      historyStart,
-      _selectedDate,
+      addDays(today, -13),
+      today,
     );
+
     return AssistantContextBuilder.build(
       profile: _userProfile,
       goals: _goals,
@@ -688,8 +720,39 @@ class MainProvider extends ChangeNotifier {
       dayFoods: _foodEntries,
       dayActivities: _activityEntries,
       dayBudget: calorieBudget,
-      history: DaySummary.fromEntries(foods, activities),
-      weights: weights,
+      week: NutritionStats.weekStatus(
+        days,
+        _selectedDate,
+        dailyGoal: _goals.calories,
+        eatBackActivity: _userProfile.eatBackActivityCalories,
+      ),
+      recentDays: days
+          .where((d) => !d.date.isBefore(recentStart) && d.date.isBefore(today))
+          .toList(),
+      recentWeights: weights,
+    );
+  }
+
+  /// Loads and aggregates logged data for the history screen
+  Future<HistoryData> loadHistory(HistoryRange range) async {
+    final today = _today();
+    final start = range.startFor(today);
+    final weekStartDate = startOfWeek(today);
+    final loadStart = start.isBefore(weekStartDate) ? start : weekStartDate;
+    return HistoryData.build(
+      range: range,
+      today: today,
+      goals: _goals,
+      eatBackActivity: _userProfile.eatBackActivityCalories,
+      foods: await _logRepository.getFoodEntriesForDateRange(loadStart, today),
+      activities: await _logRepository.getActivityEntriesForDateRange(
+        loadStart,
+        today,
+      ),
+      weights: await _logRepository.getWeightEntriesForDateRange(
+        addDays(start, -6),
+        today,
+      ),
     );
   }
 

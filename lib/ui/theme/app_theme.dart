@@ -1,85 +1,166 @@
 import 'package:flutter/material.dart';
 
-/// App theme definitions with 4 color schemes
+/// Colors with a fixed meaning that must not change with the theme hue.
+/// Macro colors are the first three slots of a colorblind-validated
+/// categorical palette; success/danger are text-safe on both surfaces.
+@immutable
+class AppColors extends ThemeExtension<AppColors> {
+  final Color protein;
+  final Color carbs;
+  final Color fat;
+  final Color success;
+  final Color danger;
+
+  const AppColors({
+    required this.protein,
+    required this.carbs,
+    required this.fat,
+    required this.success,
+    required this.danger,
+  });
+
+  static const light = AppColors(
+    protein: Color(0xFF2A78D6),
+    carbs: Color(0xFFEB6834),
+    fat: Color(0xFF1BAF7A),
+    success: Color(0xFF006300),
+    danger: Color(0xFFBA1A1A),
+  );
+
+  static const dark = AppColors(
+    protein: Color(0xFF3987E5),
+    carbs: Color(0xFFD95926),
+    fat: Color(0xFF199E70),
+    success: Color(0xFF4CC24C),
+    danger: Color(0xFFFFB4AB),
+  );
+
+  static AppColors of(BuildContext context) =>
+      Theme.of(context).extension<AppColors>() ?? light;
+
+  @override
+  AppColors copyWith({
+    Color? protein,
+    Color? carbs,
+    Color? fat,
+    Color? success,
+    Color? danger,
+  }) {
+    return AppColors(
+      protein: protein ?? this.protein,
+      carbs: carbs ?? this.carbs,
+      fat: fat ?? this.fat,
+      success: success ?? this.success,
+      danger: danger ?? this.danger,
+    );
+  }
+
+  @override
+  AppColors lerp(AppColors? other, double t) {
+    if (other == null) return this;
+    return AppColors(
+      protein: Color.lerp(protein, other.protein, t)!,
+      carbs: Color.lerp(carbs, other.carbs, t)!,
+      fat: Color.lerp(fat, other.fat, t)!,
+      success: Color.lerp(success, other.success, t)!,
+      danger: Color.lerp(danger, other.danger, t)!,
+    );
+  }
+}
+
+class AppThemeOption {
+  final String key;
+  final String label;
+  final Color seed;
+  final ThemeMode mode;
+
+  const AppThemeOption(this.key, this.label, this.seed, this.mode);
+}
+
 class AppTheme {
-  // Theme colors
-  static const _purple80 = Color(0xFFD0BCFF);
-  static const _purpleGrey80 = Color(0xFFCCC2DC);
-  static const _pink80 = Color(0xFFEFB8C8);
-  static const _purple40 = Color(0xFF6650a4);
-  static const _purpleGrey40 = Color(0xFF625b71);
-  static const _pink40 = Color(0xFF7D5260);
-
-  // Ocean colors
-  static const _oceanBlue = Color(0xFF0077B6);
-  static const _oceanCyan = Color(0xFF00B4D8);
-  static const _oceanSand = Color(0xFFFFE5B4);
-
-  // Forest colors
-  static const _forestLightGreen = Color(0xFF90EE90);
-  static const _forestBrown = Color(0xFF8B4513);
-  static const _forestGreen = Color(0xFF228B22);
-
-  static final Map<String, ThemeData> themes = {
-    'Default': _lightTheme,
-    'Ocean': _oceanTheme,
-    'Dark Forest': _forestTheme,
-    'Dark Purple': _darkPurpleTheme,
-  };
-
-  static final ThemeData _lightTheme = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: _purple40,
-      brightness: Brightness.light,
-      primary: _purple40,
-      secondary: _purpleGrey40,
-      tertiary: _pink40,
+  static const options = [
+    AppThemeOption(
+      'Default',
+      'Grün · System',
+      Color(0xFF2F7D5B),
+      ThemeMode.system,
     ),
-  );
-
-  static final ThemeData _oceanTheme = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.light(
-      primary: _oceanBlue,
-      secondary: _oceanCyan,
-      tertiary: _oceanSand,
-      surface: const Color(0xFFF8FEFF),
-      onPrimary: Colors.white,
-      onSecondary: Colors.black,
-      onSurface: const Color(0xFF191C1D),
-      primaryContainer: _oceanBlue,
-      onPrimaryContainer: Colors.white,
+    AppThemeOption(
+      'Light Green',
+      'Grün · Hell',
+      Color(0xFF2F7D5B),
+      ThemeMode.light,
     ),
-  );
-
-  static final ThemeData _forestTheme = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.dark(
-      primary: _forestLightGreen,
-      secondary: _forestBrown,
-      tertiary: _forestGreen,
-      surface: const Color(0xFF151111),
-      onPrimary: Colors.black,
-      onSecondary: Colors.black,
-      onSurface: const Color(0xFFE2DEDE),
-      primaryContainer: _forestGreen,
-      onPrimaryContainer: Colors.black,
+    AppThemeOption('Ocean', 'Ozean · Hell', Color(0xFF1F6FB2), ThemeMode.light),
+    AppThemeOption(
+      'Dark Forest',
+      'Wald · Dunkel',
+      Color(0xFF3F7D4F),
+      ThemeMode.dark,
     ),
-  );
-
-  static final ThemeData _darkPurpleTheme = ThemeData(
-    useMaterial3: true,
-    colorScheme: ColorScheme.fromSeed(
-      seedColor: _purple80,
-      brightness: Brightness.dark,
-      primary: _purple80,
-      secondary: _purpleGrey80,
-      tertiary: _pink80,
+    AppThemeOption(
+      'Dark Purple',
+      'Violett · Dunkel',
+      Color(0xFF6750A4),
+      ThemeMode.dark,
     ),
-  );
+  ];
 
-  static ThemeData getTheme(String themeName) {
-    return themes[themeName] ?? _lightTheme;
+  static AppThemeOption option(String key) =>
+      options.firstWhere((o) => o.key == key, orElse: () => options.first);
+
+  static ThemeData light(String key) =>
+      _build(option(key).seed, Brightness.light);
+
+  static ThemeData dark(String key) =>
+      _build(option(key).seed, Brightness.dark);
+
+  static ThemeData _build(Color seed, Brightness brightness) {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: seed,
+      brightness: brightness,
+      dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
+    );
+    final isDark = brightness == Brightness.dark;
+
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: scheme.surface,
+      extensions: [isDark ? AppColors.dark : AppColors.light],
+      appBarTheme: AppBarTheme(
+        backgroundColor: scheme.surface,
+        foregroundColor: scheme.onSurface,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+        centerTitle: false,
+      ),
+      cardTheme: CardThemeData(
+        elevation: 0,
+        color: scheme.surfaceContainerLow,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: scheme.surfaceContainer,
+        indicatorColor: scheme.secondaryContainer,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: scheme.primaryContainer,
+        foregroundColor: scheme.onPrimaryContainer,
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: scheme.surfaceContainerHigh,
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 }

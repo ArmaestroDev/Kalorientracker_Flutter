@@ -60,16 +60,74 @@ class ClaudeApiService implements GenerativeService {
         ? '${request.system}\n\nAntworte ausschließlich mit einem gültigen JSON-Objekt, ohne Markdown und ohne weiteren Text.'
         : request.system;
 
-    final body = {
-      'model': model,
-      'max_tokens': request.maxTokens,
-      'system': system,
-      'messages': messages,
-      if (_supportsEffort)
-        'output_config': {'effort': request.jsonOutput ? 'low' : 'medium'},
-      if (_supportsServerFallbacks) 'fallbacks': 'default',
-    };
+    for (var round = 0; round <= GenerativeService.maxToolRounds; round++) {
+      final json = await _post({
+        'model': model,
+        'max_tokens': request.maxTokens,
+        'system': system,
+        'messages': messages,
+        if (request.usesTools)
+          'tools': [
+            for (final tool in request.tools)
+              {
+                'name': tool.name,
+                'description': tool.description,
+                'input_schema': tool.parameters,
+              },
+          ],
+        if (_supportsEffort)
+          'output_config': {'effort': request.jsonOutput ? 'low' : 'medium'},
+        if (_supportsServerFallbacks) 'fallbacks': 'default',
+      }, request);
 
+      if (json['stop_reason'] == 'refusal') {
+        throw const AiException(
+          'Claude hat diese Anfrage abgelehnt. Formuliere sie bitte anders.',
+        );
+      }
+      final content = (json['content'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+      final toolUses = content.where((b) => b['type'] == 'tool_use').toList();
+
+      if (request.usesTools && toolUses.isNotEmpty) {
+        messages.add({'role': 'assistant', 'content': content});
+        messages.add({
+          'role': 'user',
+          'content': [
+            for (final use in toolUses)
+              {
+                'type': 'tool_result',
+                'tool_use_id': use['id'],
+                'content': jsonEncode(
+                  await GenerativeService.runTool(
+                    request,
+                    use['name'] as String,
+                    (use['input'] as Map?)?.cast<String, dynamic>() ?? {},
+                  ),
+                ),
+              },
+          ],
+        });
+        continue;
+      }
+
+      final text = content
+          .where((block) => block['type'] == 'text')
+          .map((block) => block['text'] as String? ?? '')
+          .join();
+      if (text.trim().isEmpty) {
+        throw const AiException('Claude hat keine Antwort geliefert.');
+      }
+      return text;
+    }
+    throw GenerativeService.tooManyToolRounds(providerName);
+  }
+
+  Future<Map<String, dynamic>> _post(
+    Map<String, dynamic> body,
+    AiRequest request,
+  ) async {
     final http.Response response;
     try {
       response = await _client
@@ -104,21 +162,6 @@ class ClaudeApiService implements GenerativeService {
         responseBody,
       );
     }
-
-    final json = jsonDecode(responseBody) as Map<String, dynamic>;
-    if (json['stop_reason'] == 'refusal') {
-      throw const AiException(
-        'Claude hat diese Anfrage abgelehnt. Formuliere sie bitte anders.',
-      );
-    }
-    final text = (json['content'] as List<dynamic>? ?? [])
-        .whereType<Map<String, dynamic>>()
-        .where((block) => block['type'] == 'text')
-        .map((block) => block['text'] as String? ?? '')
-        .join();
-    if (text.trim().isEmpty) {
-      throw const AiException('Claude hat keine Antwort geliefert.');
-    }
-    return text;
+    return jsonDecode(responseBody) as Map<String, dynamic>;
   }
 }

@@ -90,14 +90,92 @@ class OpenAiCompatibleService implements GenerativeService {
       }
     }
 
-    final body = {
-      'model': model,
-      'messages': messages,
-      _maxTokensField: request.maxTokens,
-      if (request.jsonOutput && _supportsJsonMode)
-        'response_format': {'type': 'json_object'},
-    };
+    for (var round = 0; round <= GenerativeService.maxToolRounds; round++) {
+      final json = await _post({
+        'model': model,
+        'messages': messages,
+        _maxTokensField: request.maxTokens,
+        if (request.jsonOutput && _supportsJsonMode)
+          'response_format': {'type': 'json_object'},
+        if (request.usesTools)
+          'tools': [
+            for (final tool in request.tools)
+              {
+                'type': 'function',
+                'function': {
+                  'name': tool.name,
+                  'description': tool.description,
+                  'parameters': tool.parameters,
+                },
+              },
+          ],
+      }, request);
 
+      final choices = json['choices'] as List<dynamic>? ?? [];
+      if (choices.isEmpty) {
+        throw AiException('$providerName hat keine Antwort geliefert.');
+      }
+      final message =
+          (choices.first as Map<String, dynamic>)['message']
+              as Map<String, dynamic>? ??
+          {};
+      final toolCalls = (message['tool_calls'] as List<dynamic>? ?? [])
+          .whereType<Map<String, dynamic>>()
+          .toList();
+
+      if (request.usesTools && toolCalls.isNotEmpty) {
+        messages.add({...message, 'role': 'assistant'});
+        for (final call in toolCalls) {
+          final function = call['function'] as Map<String, dynamic>? ?? {};
+          final rawArgs = function['arguments'];
+          Map<String, dynamic> args = {};
+          if (rawArgs is String && rawArgs.trim().isNotEmpty) {
+            try {
+              args = (jsonDecode(rawArgs) as Map).cast<String, dynamic>();
+            } catch (_) {}
+          } else if (rawArgs is Map) {
+            args = rawArgs.cast<String, dynamic>();
+          }
+          messages.add({
+            'role': 'tool',
+            'tool_call_id': call['id'],
+            'content': jsonEncode(
+              await GenerativeService.runTool(
+                request,
+                function['name'] as String? ?? '',
+                args,
+              ),
+            ),
+          });
+        }
+        continue;
+      }
+
+      final refusal = message['refusal'] as String?;
+      if (refusal != null && refusal.isNotEmpty) {
+        throw AiException('$providerName hat abgelehnt: $refusal');
+      }
+      final content = message['content'];
+      final text = content is String
+          ? content
+          : content is List
+          ? content
+                .whereType<Map<String, dynamic>>()
+                .map((part) => part['text'] as String? ?? '')
+                .join()
+          : '';
+      if (text.trim().isEmpty) {
+        throw AiException('$providerName hat keine Antwort geliefert.');
+      }
+      return text;
+    }
+    throw GenerativeService.tooManyToolRounds(providerName);
+  }
+
+  Future<Map<String, dynamic>> _post(
+    Map<String, dynamic> body,
+    AiRequest request,
+  ) async {
     final http.Response response;
     try {
       response = await _client
@@ -129,31 +207,6 @@ class OpenAiCompatibleService implements GenerativeService {
         responseBody,
       );
     }
-
-    final json = jsonDecode(responseBody) as Map<String, dynamic>;
-    final choices = json['choices'] as List<dynamic>? ?? [];
-    if (choices.isEmpty) {
-      throw AiException('$providerName hat keine Antwort geliefert.');
-    }
-    final message =
-        (choices.first as Map<String, dynamic>)['message']
-            as Map<String, dynamic>?;
-    final refusal = message?['refusal'] as String?;
-    if (refusal != null && refusal.isNotEmpty) {
-      throw AiException('$providerName hat abgelehnt: $refusal');
-    }
-    final content = message?['content'];
-    final text = content is String
-        ? content
-        : content is List
-        ? content
-              .whereType<Map<String, dynamic>>()
-              .map((part) => part['text'] as String? ?? '')
-              .join()
-        : '';
-    if (text.trim().isEmpty) {
-      throw AiException('$providerName hat keine Antwort geliefert.');
-    }
-    return text;
+    return jsonDecode(responseBody) as Map<String, dynamic>;
   }
 }

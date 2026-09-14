@@ -60,9 +60,9 @@ class FoodItemRow extends StatelessWidget {
                   value: 'delete',
                   child: Row(
                     children: [
-                      Icon(Icons.delete, size: 20, color: Colors.red),
+                      Icon(Icons.delete_outline, size: 20),
                       SizedBox(width: 8),
-                      Text('Löschen', style: TextStyle(color: Colors.red)),
+                      Text('Löschen'),
                     ],
                   ),
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:intl/intl.dart';
 import 'package:kalorientracker_flutter/data/models/activity_entry.dart';
 import 'package:kalorientracker_flutter/data/models/enums.dart';
 import 'package:kalorientracker_flutter/data/models/food_entry.dart';
@@ -8,6 +9,7 @@ import 'package:kalorientracker_flutter/data/models/user_profile.dart';
 import 'package:kalorientracker_flutter/data/models/weight_entry.dart';
 import 'package:kalorientracker_flutter/logic/assistant_context_builder.dart';
 import 'package:kalorientracker_flutter/logic/goals_calculator.dart';
+import 'package:kalorientracker_flutter/logic/nutrition_stats.dart';
 import 'package:kalorientracker_flutter/logic/number_format.dart';
 import 'package:kalorientracker_flutter/ui/widgets/dialogs/edit_food_dialog.dart';
 
@@ -37,54 +39,70 @@ void main() {
       aboutMe: 'BJJ 4x pro Woche, esse in der Mensa',
     );
     final goals = GoalsCalculator.calculateGoals(profile);
-    final today = DateTime(2026, 9, 14);
+    final today = DateTime(2026, 9, 17);
+    final foods = [
+      for (var d = 14; d <= 16; d++)
+        FoodEntry(
+          name: 'Mensa',
+          calories: 2500,
+          protein: 120,
+          carbs: 250,
+          fat: 80,
+          date: DateTime(2026, 9, d),
+        ),
+      FoodEntry(
+        name: 'Skyr natur',
+        calories: 158,
+        protein: 28,
+        carbs: 10,
+        fat: 1,
+        date: today,
+        amount: 250,
+        unit: 'g',
+      ),
+    ];
+    final days = NutritionStats.daily(foods, [], DateTime(2026, 9, 10), today);
 
     String build() => AssistantContextBuilder.build(
       profile: profile,
       goals: goals,
-      now: DateTime(2026, 9, 14, 21, 30),
+      now: DateTime(2026, 9, 17, 21, 30),
       selectedDate: today,
-      dayFoods: [
-        FoodEntry(
-          name: 'Skyr natur',
-          calories: 158,
-          protein: 28,
-          carbs: 10,
-          fat: 1,
-          date: today,
-          amount: 250,
-          unit: 'g',
-        ),
-      ],
+      dayFoods: [foods.last],
       dayActivities: [
         ActivityEntry(name: '60 Min BJJ', caloriesBurned: 600, date: today),
       ],
       dayBudget: goals.calories,
-      history: DaySummary.fromEntries([
-        FoodEntry(
-          name: 'Döner',
-          calories: 750,
-          protein: 35,
-          carbs: 70,
-          fat: 30,
-          date: DateTime(2026, 9, 12),
-        ),
-      ], []),
-      weights: [WeightEntry(date: DateTime(2026, 9, 13), weightKg: 81.6)],
+      week: NutritionStats.weekStatus(
+        days,
+        today,
+        dailyGoal: goals.calories,
+        eatBackActivity: false,
+      ),
+      recentDays: days.where((d) => d.date.isBefore(today)).toList(),
+      recentWeights: [
+        WeightEntry(date: DateTime(2026, 9, 9), weightKg: 82.4),
+        WeightEntry(date: DateTime(2026, 9, 16), weightKg: 81.6),
+      ],
     );
 
-    test('contains personal data, remaining budget and history', () {
+    test('contains profile, today, week budget and recent days', () {
       final prompt = build();
+      final nf = NumberFormat.decimalPattern('de_DE');
       expect(prompt, contains('BJJ 4x pro Woche, esse in der Mensa'));
       expect(prompt, contains('Skyr natur (250 g): 158 kcal'));
-      expect(prompt, contains('Noch übrig: ${goals.calories - 158} kcal'));
+      expect(prompt, contains('noch ${goals.calories - 158} von'));
+      expect(prompt, contains('Gegessen bis einschließlich Heute: 7.658 kcal'));
       expect(
         prompt,
-        contains('Protein noch offen: ${goals.proteinGrams - 28} g'),
+        contains(
+          'Übrig für die Woche: ${nf.format(goals.calories * 7 - 7658)} kcal',
+        ),
       );
-      expect(prompt, contains('750 kcal'));
+      expect(prompt, contains('verteilt auf 4 verbleibende Tage'));
+      expect(prompt, contains('2026-09-17'));
+      expect(prompt, contains('keine Einträge'));
       expect(prompt, contains('81,6 kg'));
-      expect(prompt, contains('21:30'));
     });
 
     test('never leaks API keys', () {
