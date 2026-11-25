@@ -4,6 +4,7 @@ import '../../data/models/enums.dart';
 import '../../logic/goals_calculator.dart';
 import '../../logic/number_format.dart';
 import '../widgets/app_text_field.dart';
+import 'plans_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final UserProfile initialProfile;
@@ -112,6 +113,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  String? _ageError(UserProfile p) {
+    if (_ageController.text.trim().isEmpty) return null;
+    if (p.age <= 0 || p.age > 120) return '1–120 J.';
+    return null;
+  }
+
+  String? _weightError(UserProfile p) {
+    if (_weightController.text.trim().isEmpty) return null;
+    if (p.weightKg <= 0 || p.weightKg > 600) return '1–600 kg';
+    return null;
+  }
+
+  String? _heightError(UserProfile p) {
+    if (_heightController.text.trim().isEmpty) return null;
+    if (p.heightCm <= 0 || p.heightCm > 300) return '1–300 cm';
+    return null;
+  }
+
+  String? _bodyFatError(UserProfile p) {
+    if (_bodyFatController.text.trim().isEmpty) return null;
+    if (p.bodyFatPercent < 3 || p.bodyFatPercent > 60) return '3–60 %';
+    return null;
+  }
+
+  bool _canSave(UserProfile p) {
+    return p.age > 0 &&
+        p.age <= 120 &&
+        p.weightKg > 0 &&
+        p.weightKg <= 600 &&
+        p.heightCm > 0 &&
+        p.heightCm <= 300 &&
+        _bodyFatError(p) == null;
+  }
+
   void _refresh(String _) => setState(() {});
 
   Widget _sectionTitle(String title, {String? subtitle}) {
@@ -186,6 +221,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final profile = _buildProfile();
     final provider = _selectedProvider;
+    final canSave = _canSave(profile);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Dein Profil & Ziele')),
@@ -202,6 +238,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: _ageController,
                     label: 'Alter',
                     suffix: 'J.',
+                    errorText: _ageError(profile),
                     onChanged: _refresh,
                   ),
                 ),
@@ -239,6 +276,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: _weightController,
                     label: 'Gewicht',
                     suffix: 'kg',
+                    errorText: _weightError(profile),
                     onChanged: _refresh,
                   ),
                 ),
@@ -248,6 +286,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     controller: _heightController,
                     label: 'Größe',
                     suffix: 'cm',
+                    errorText: _heightError(profile),
                     onChanged: _refresh,
                   ),
                 ),
@@ -258,6 +297,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               controller: _bodyFatController,
               label: 'Körperfett (optional)',
               suffix: '%',
+              errorText: _bodyFatError(profile),
               helper:
                   'Wenn bekannt, werden Grundumsatz und Protein genauer über die Magermasse berechnet.',
               onChanged: _refresh,
@@ -333,6 +373,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
               maxLines: 8,
               minLines: 4,
             ),
+            const SizedBox(height: 12),
+            Card(
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                leading: Icon(
+                  Icons.picture_as_pdf_outlined,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                title: const Text('Ernährungs- & Trainingspläne (PDF)'),
+                subtitle: const Text(
+                  'Pläne hochladen, damit dein Coach sich immer daran orientiert',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PlansScreen()),
+                  );
+                },
+              ),
+            ),
 
             _sectionTitle('KI-Assistent'),
             DropdownButtonFormField<AiProvider>(
@@ -360,7 +420,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Expanded(
                   child: AppTextField(
-                    key: ValueKey('key-${provider.name}-$_showApiKey'),
+                    key: ValueKey('key-${provider.name}'),
                     controller: _apiKeyControllers[provider]!,
                     label: '${provider.label} API-Schlüssel',
                     obscureText: !_showApiKey,
@@ -386,17 +446,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 32),
             FilledButton.icon(
-              onPressed: profile.hasBodyData
-                  ? () => widget.onSave(_buildProfile())
-                  : null,
+              onPressed: canSave ? () => widget.onSave(_buildProfile()) : null,
               icon: const Icon(Icons.save),
               label: const Text('Speichern'),
             ),
-            if (!profile.hasBodyData)
+            if (!canSave)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  'Alter, Gewicht und Größe werden zum Speichern benötigt.',
+                  'Gültige Angaben für Alter, Gewicht und Größe werden zum Speichern benötigt.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

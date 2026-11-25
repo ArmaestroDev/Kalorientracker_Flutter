@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import '../models/chat_message.dart';
 
-/// A function the model may call to fetch data
+/// A function the model may call to fetch or log data
 class AiTool {
   final String name;
   final String description;
@@ -29,6 +29,7 @@ class AiRequest {
   final List<ChatMessage> messages;
   final bool jsonOutput;
   final Uint8List? imageBytes;
+  final Uint8List? pdfBytes;
   final int maxTokens;
   final List<AiTool> tools;
   final ToolExecutor? onToolCall;
@@ -38,18 +39,21 @@ class AiRequest {
     required this.messages,
     this.jsonOutput = false,
     this.imageBytes,
+    this.pdfBytes,
     this.maxTokens = 16000,
     this.tools = const [],
     this.onToolCall,
   });
 
   bool get usesTools => tools.isNotEmpty && onToolCall != null;
+  bool get hasMedia => imageBytes != null || pdfBytes != null;
 
   AiRequest.single({
     required this.system,
     required String prompt,
     this.jsonOutput = false,
     this.imageBytes,
+    this.pdfBytes,
     this.maxTokens = 16000,
   }) : messages = [ChatMessage(role: ChatRole.user, text: prompt)],
        tools = const [],
@@ -71,12 +75,57 @@ abstract class GenerativeService {
 
   Future<String> generate(AiRequest request);
 
+  void close() {}
+
   static const textTimeout = Duration(seconds: 120);
   static const maxToolRounds = 8;
 
   static AiException tooManyToolRounds(String provider) => AiException(
     '$provider hat zu viele Datenabfragen gebraucht. Formuliere die Frage bitte genauer.',
   );
+
+  /// Detects image MIME type from magic bytes, defaulting to image/jpeg
+  static String detectImageMimeType(Uint8List bytes) {
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47) {
+      return 'image/png';
+    }
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return 'image/webp';
+    }
+    if (bytes.length >= 3 &&
+        bytes[0] == 0x47 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46) {
+      return 'image/gif';
+    }
+    return 'image/jpeg';
+  }
+
+  static Map<String, dynamic> decodeJsonObject(String provider, String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      throw AiException('$provider hat eine unerwartete Antwort geliefert.');
+    } on AiException {
+      rethrow;
+    } catch (_) {
+      throw AiException(
+        '$provider hat keine gültigen JSON-Daten zurückgegeben. Bitte erneut versuchen.',
+      );
+    }
+  }
 
   /// Runs a tool and never throws, so the model always gets an answer
   static Future<Map<String, dynamic>> runTool(

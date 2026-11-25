@@ -186,7 +186,7 @@ class GoalsSummaryCard extends StatelessWidget {
                         ),
                         if (week.unloggedPastDays > 0)
                           Text(
-                            '${week.unloggedPastDays} ${week.unloggedPastDays == 1 ? 'Tag' : 'Tage'} ohne Einträge',
+                            '${week.unloggedPastDays} ${week.unloggedPastDays == 1 ? 'Tag' : 'Tage'} ohne Einträge (nicht im Budget)',
                             style: textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),

@@ -37,6 +37,7 @@ class ActivityItemRow extends StatelessWidget {
               ),
             ),
             PopupMenuButton<String>(
+              tooltip: 'Optionen',
               onSelected: (value) {
                 if (value == 'edit') onEdit();
                 if (value == 'delete') onDelete();

@@ -8,11 +8,16 @@ import '../../models/weight_entry.dart';
 class LogDao {
   final AppDatabase _appDatabase = AppDatabase();
 
+  static String _sqlDate(DateTime d) {
+    final local = d.isUtc ? d.toLocal() : d;
+    return '${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+  }
+
   // Food Entry operations
 
   Future<List<FoodEntry>> getFoodEntriesForDate(DateTime date) async {
     final db = await _appDatabase.database;
-    final dateString = date.toIso8601String().split('T')[0];
+    final dateString = _sqlDate(date);
 
     final maps = await db.query(
       'food_entries',
@@ -28,8 +33,8 @@ class LogDao {
     DateTime end,
   ) async {
     final db = await _appDatabase.database;
-    final startString = start.toIso8601String().split('T')[0];
-    final endString = end.toIso8601String().split('T')[0];
+    final startString = _sqlDate(start);
+    final endString = _sqlDate(end);
 
     final maps = await db.query(
       'food_entries',
@@ -69,7 +74,7 @@ class LogDao {
 
   Future<List<ActivityEntry>> getActivityEntriesForDate(DateTime date) async {
     final db = await _appDatabase.database;
-    final dateString = date.toIso8601String().split('T')[0];
+    final dateString = _sqlDate(date);
 
     final maps = await db.query(
       'activity_entries',
@@ -85,8 +90,8 @@ class LogDao {
     DateTime end,
   ) async {
     final db = await _appDatabase.database;
-    final startString = start.toIso8601String().split('T')[0];
-    final endString = end.toIso8601String().split('T')[0];
+    final startString = _sqlDate(start);
+    final endString = _sqlDate(end);
 
     final maps = await db.query(
       'activity_entries',
@@ -132,10 +137,7 @@ class LogDao {
     final maps = await db.query(
       'weight_entries',
       where: 'date >= ? AND date <= ?',
-      whereArgs: [
-        start.toIso8601String().split('T')[0],
-        end.toIso8601String().split('T')[0],
-      ],
+      whereArgs: [_sqlDate(start), _sqlDate(end)],
       orderBy: 'date ASC',
     );
     return maps.map((map) => WeightEntry.fromMap(map)).toList();
@@ -155,7 +157,7 @@ class LogDao {
     await db.delete(
       'weight_entries',
       where: 'date = ?',
-      whereArgs: [date.toIso8601String().split('T')[0]],
+      whereArgs: [_sqlDate(date)],
     );
   }
 }

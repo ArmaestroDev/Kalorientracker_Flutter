@@ -1,0 +1,12 @@
+<resources>
+    <color name="widget_surface">#1A1D24</color>
+    <color name="widget_stroke">#2B313D</color>
+    <color name="widget_primary">#8AB4F8</color>
+    <color name="widget_on_primary">#0C2545</color>
+    <color name="widget_tonal">#26354D</color>
+    <color name="widget_on_tonal">#D6E4FF</color>
+    <color name="widget_text_primary">#ECEFF4</color>
+    <color name="widget_text_secondary">#A5AEBC</color>
+    <color name="widget_track">#2B313D</color>
+    <color name="widget_danger">#FFB4AB</color>
+</resources>

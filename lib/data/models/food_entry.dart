@@ -37,6 +37,9 @@ class FoodEntry {
     double? amount,
     String? unit,
     String? foodItemId,
+    bool clearAmount = false,
+    bool clearUnit = false,
+    bool clearFoodItemId = false,
   }) {
     return FoodEntry(
       id: id ?? this.id,
@@ -46,10 +49,15 @@ class FoodEntry {
       carbs: carbs ?? this.carbs,
       fat: fat ?? this.fat,
       date: date ?? this.date,
-      amount: amount ?? this.amount,
-      unit: unit ?? this.unit,
-      foodItemId: foodItemId ?? this.foodItemId,
+      amount: clearAmount ? null : (amount ?? this.amount),
+      unit: clearUnit ? null : (unit ?? this.unit),
+      foodItemId: clearFoodItemId ? null : (foodItemId ?? this.foodItemId),
     );
+  }
+
+  static String _sqlDate(DateTime d) {
+    final local = d.isUtc ? d.toLocal() : d;
+    return '${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
   }
 
   Map<String, dynamic> toMap() {
@@ -60,7 +68,7 @@ class FoodEntry {
       'protein': protein,
       'carbs': carbs,
       'fat': fat,
-      'date': date.toIso8601String().split('T')[0],
+      'date': _sqlDate(date),
       'amount': amount,
       'unit': unit,
       'food_item_id': foodItemId,
@@ -68,15 +76,16 @@ class FoodEntry {
   }
 
   factory FoodEntry.fromMap(Map<String, dynamic> map) {
+    final dateRaw = map['date'] as String?;
     return FoodEntry(
       id: map['id'] as String? ?? const Uuid().v4(),
       name: map['name'] as String? ?? 'Unbekanntes Essen',
-      calories: map['calories'] as int? ?? 0,
-      protein: map['protein'] as int? ?? 0,
-      carbs: map['carbs'] as int? ?? 0,
-      fat: map['fat'] as int? ?? 0,
-      date: map['date'] != null
-          ? DateTime.parse(map['date'] as String)
+      calories: (map['calories'] as num?)?.toInt() ?? 0,
+      protein: (map['protein'] as num?)?.toInt() ?? 0,
+      carbs: (map['carbs'] as num?)?.toInt() ?? 0,
+      fat: (map['fat'] as num?)?.toInt() ?? 0,
+      date: dateRaw != null
+          ? DateTime.tryParse(dateRaw) ?? DateTime.now()
           : DateTime.now(),
       amount: (map['amount'] as num?)?.toDouble(),
       unit: map['unit'] as String?,

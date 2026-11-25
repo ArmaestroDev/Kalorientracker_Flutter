@@ -315,4 +315,7 @@ class _FakeService implements GenerativeService {
 
   @override
   Future<String> generate(AiRequest request) async => response;
+
+  @override
+  void close() {}
 }

@@ -29,6 +29,7 @@ class HistoryData {
   final PeriodStats total;
   final WeekStatus currentWeek;
   final List<WeightEntry> weights;
+  final List<({DateTime date, double average})> weightTrend;
 
   const HistoryData({
     required this.range,
@@ -39,6 +40,7 @@ class HistoryData {
     required this.total,
     required this.currentWeek,
     required this.weights,
+    required this.weightTrend,
   });
 
   factory HistoryData.build({
@@ -80,6 +82,8 @@ class HistoryData {
       ),
     };
 
+    final fullTrend = NutritionStats.weightTrend(weights);
+
     return HistoryData(
       range: range,
       today: today,
@@ -100,6 +104,7 @@ class HistoryData {
         eatBackActivity: eatBackActivity,
       ),
       weights: weights.where((w) => !w.date.isBefore(start)).toList(),
+      weightTrend: fullTrend.where((t) => !t.date.isBefore(start)).toList(),
     );
   }
 }

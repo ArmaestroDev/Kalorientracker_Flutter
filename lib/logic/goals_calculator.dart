@@ -33,19 +33,32 @@ class GoalsCalculator {
     int targetCalories = (tdee + profile.goal.calorieModifier).round();
 
     final minCalories = profile.gender == Gender.male ? 1500 : 1200;
-    if (targetCalories < minCalories) {
+    if (profile.goal.calorieModifier <= 0 && targetCalories < minCalories) {
       targetCalories = tdee < minCalories ? tdee.round() : minCalories;
     }
 
     final leanMass = leanMassKg(profile);
-    final proteinGrams = leanMass != null
+    var proteinGrams = leanMass != null
         ? (leanMass * profile.goal.proteinPerKg * _leanMassProteinBonus).round()
         : (profile.weightKg * profile.goal.proteinPerKg).round();
 
-    final fatGrams = [
+    var fatGrams = [
       targetCalories * _fatRatio / _calPerGramFat,
       profile.weightKg * _minFatPerKg,
     ].reduce((a, b) => a > b ? a : b).round();
+
+    if (proteinGrams * _calPerGramProtein + fatGrams * _calPerGramFat >
+        targetCalories) {
+      final fatFloor = (targetCalories * _fatRatio / _calPerGramFat).round();
+      fatGrams = fatGrams.clamp(0, fatFloor);
+      if (proteinGrams * _calPerGramProtein + fatGrams * _calPerGramFat >
+          targetCalories) {
+        final maxProtein =
+            ((targetCalories - fatGrams * _calPerGramFat) / _calPerGramProtein)
+                .floor();
+        proteinGrams = maxProtein.clamp(0, proteinGrams);
+      }
+    }
 
     final carbCalories =
         targetCalories -

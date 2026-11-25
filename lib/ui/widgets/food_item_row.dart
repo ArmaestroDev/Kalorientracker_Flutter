@@ -16,7 +16,8 @@ class FoodItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final amount = food.amount != null && food.unit != null
+    final amount =
+        food.amount != null && food.unit != null && food.unit!.isNotEmpty
         ? '${formatLocalizedNumber(food.amount!)} ${food.unit} · '
         : '';
 
@@ -41,6 +42,7 @@ class FoodItemRow extends StatelessWidget {
               ),
             ),
             PopupMenuButton<String>(
+              tooltip: 'Optionen',
               onSelected: (value) {
                 if (value == 'edit') onEdit();
                 if (value == 'delete') onDelete();

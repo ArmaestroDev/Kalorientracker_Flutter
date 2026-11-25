@@ -28,22 +28,28 @@ class ActivityEntry {
     );
   }
 
+  static String _sqlDate(DateTime d) {
+    final local = d.isUtc ? d.toLocal() : d;
+    return '${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'name': name,
       'caloriesBurned': caloriesBurned,
-      'date': date.toIso8601String().split('T')[0],
+      'date': _sqlDate(date),
     };
   }
 
   factory ActivityEntry.fromMap(Map<String, dynamic> map) {
+    final dateRaw = map['date'] as String?;
     return ActivityEntry(
       id: map['id'] as String? ?? const Uuid().v4(),
       name: map['name'] as String? ?? 'Unbekannte Aktivität',
-      caloriesBurned: map['caloriesBurned'] as int? ?? 0,
-      date: map['date'] != null
-          ? DateTime.parse(map['date'] as String)
+      caloriesBurned: (map['caloriesBurned'] as num?)?.toInt() ?? 0,
+      date: dateRaw != null
+          ? DateTime.tryParse(dateRaw) ?? DateTime.now()
           : DateTime.now(),
     );
   }

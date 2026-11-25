@@ -46,6 +46,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   Future<HistoryData> _load(MainProvider provider) {
     final key = (
       _range,
+      dayKey(DateTime.now()),
       provider.dataVersion,
       provider.goals.calories,
       provider.userProfile.eatBackActivityCalories,
@@ -566,8 +567,8 @@ class _WeightChartCard extends StatelessWidget {
     }
 
     final start = data.range.startFor(data.today);
-    final trend = NutritionStats.weightTrend(weights);
-    double x(DateTime d) => d.difference(start).inDays.toDouble();
+    final trend = data.weightTrend;
+    double x(DateTime d) => calendarDayDiff(start, d).toDouble();
     final all = weights.map((w) => w.weightKg);
     final minW = all.reduce(math.min);
     final maxW = all.reduce(math.max);

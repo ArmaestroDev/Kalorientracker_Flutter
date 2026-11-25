@@ -1,13 +1,24 @@
 import '../models/food_entry.dart';
 import '../models/activity_entry.dart';
 import '../models/food_item.dart';
+import '../models/user_plan.dart';
 import '../models/weight_entry.dart';
 import '../database/dao/log_dao.dart';
 import '../database/dao/food_item_dao.dart';
+import '../database/dao/plan_dao.dart';
 
 class LogRepository {
-  final LogDao _logDao = LogDao();
-  final FoodItemDao _foodItemDao = FoodItemDao();
+  final LogDao _logDao;
+  final FoodItemDao _foodItemDao;
+  final PlanDao _planDao;
+
+  LogRepository({
+    LogDao? logDao,
+    FoodItemDao? foodItemDao,
+    PlanDao? planDao,
+  }) : _logDao = logDao ?? LogDao(),
+       _foodItemDao = foodItemDao ?? FoodItemDao(),
+       _planDao = planDao ?? PlanDao();
 
   // Food Entries
   Future<List<FoodEntry>> getFoodEntriesForDate(DateTime date) =>
@@ -48,10 +59,16 @@ class LogRepository {
 
   // Food Items (History/Database)
   Future<void> saveFoodItem(FoodItem item) => _foodItemDao.insertOrUpdate(item);
+  Future<void> deleteFoodItem(String id) => _foodItemDao.deleteFoodItem(id);
   Future<List<FoodItem>> getRecentFoodItems() => _foodItemDao.getRecents();
   Future<List<FoodItem>> searchFoodItems(String query) =>
       _foodItemDao.searchFoods(query);
   Future<List<String>> getFoodCategories() => _foodItemDao.getAllCategories();
   Future<List<FoodItem>> getFoodItemsByCategory(String category) =>
       _foodItemDao.getByCategory(category);
+
+  // User Plans (Meal & Training PDFs)
+  Future<List<UserPlan>> getPlans() => _planDao.getAllPlans();
+  Future<void> savePlan(UserPlan plan) => _planDao.upsertPlan(plan);
+  Future<void> deletePlan(String id) => _planDao.deletePlan(id);
 }

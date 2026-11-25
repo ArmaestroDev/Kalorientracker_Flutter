@@ -3,7 +3,9 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:provider/provider.dart';
 import '../../data/models/chat_message.dart';
 import '../../logic/providers/main_provider.dart';
+import '../../logic/voice_input_service.dart';
 import '../widgets/app_text_field.dart';
+import 'plans_screen.dart';
 
 class _QuickAction {
   final IconData icon;
@@ -13,7 +15,7 @@ class _QuickAction {
   const _QuickAction(this.icon, this.label, this.prompt);
 }
 
-/// Personal coach: a chat that always knows the user's profile, goals and log
+/// Personal coach: a chat that always knows the user's profile, plans, goals and log
 class AssistantScreen extends StatefulWidget {
   const AssistantScreen({super.key});
 
@@ -24,13 +26,16 @@ class AssistantScreen extends StatefulWidget {
 class _AssistantScreenState extends State<AssistantScreen> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
+  final _voiceService = VoiceInputService();
   int _lastMessageCount = 0;
+  bool _isListening = false;
+  String _voiceBaseText = '';
 
   static const _quickActions = [
     _QuickAction(
       Icons.restaurant_menu,
       'Was soll ich jetzt essen?',
-      'Was soll ich als Nächstes essen? Schlag mir 2–3 konkrete Optionen vor, die in mein restliches Budget und zu meinem Proteinziel passen und zu meinem Alltag passen. Nenne jeweils ungefähre kcal und Protein.',
+      'Was soll ich als Nächstes essen? Schlag mir 2–3 konkrete Optionen vor, die zu meinen Plänen (falls vorhanden), meinem restlichen Budget, meinem Proteinziel und meinem Alltag passen. Nenne jeweils ungefähre kcal und Protein.',
     ),
     _QuickAction(
       Icons.account_balance_wallet_outlined,
@@ -61,6 +66,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   @override
   void dispose() {
+    _voiceService.cancel();
     _inputController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -68,8 +74,39 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   void _send(MainProvider provider, String text, {String? displayText}) {
     if (text.trim().isEmpty || provider.assistantBusy) return;
+    if (_isListening) _voiceService.stop();
     if (displayText == null) _inputController.clear();
     provider.sendAssistantMessage(text, displayText: displayText);
+  }
+
+  Future<void> _toggleVoice() async {
+    if (_isListening) {
+      await _voiceService.stop();
+      if (mounted) setState(() => _isListening = false);
+      return;
+    }
+    _voiceBaseText = _inputController.text.trim();
+    await _voiceService.startListening(
+      onListeningChanged: (active) {
+        if (mounted) setState(() => _isListening = active);
+      },
+      onResult: (words, _) {
+        if (!mounted || words.trim().isEmpty) return;
+        final combined = _voiceBaseText.isEmpty
+            ? words
+            : '$_voiceBaseText $words';
+        _inputController.value = TextEditingValue(
+          text: combined,
+          selection: TextSelection.collapsed(offset: combined.length),
+        );
+      },
+      onError: (msg) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      },
+    );
   }
 
   void _scrollToBottomIfNeeded(int messageCount) {
@@ -83,6 +120,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  void _openPlans() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const PlansScreen()));
   }
 
   Future<void> _confirmClear(MainProvider provider) async {
@@ -120,6 +163,15 @@ class _AssistantScreenState extends State<AssistantScreen> {
           appBar: AppBar(
             title: const Text('Dein Coach'),
             actions: [
+              IconButton(
+                tooltip: 'Ernährungs- & Trainingspläne (PDF)',
+                onPressed: _openPlans,
+                icon: Badge.count(
+                  count: provider.activePlanCount,
+                  isLabelVisible: provider.activePlanCount > 0,
+                  child: const Icon(Icons.description_outlined),
+                ),
+              ),
               if (messages.isNotEmpty)
                 IconButton(
                   tooltip: 'Unterhaltung löschen',
@@ -171,6 +223,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
     final profile = provider.userProfile;
+    final activePlans = provider.activePlanCount;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -178,7 +231,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
         Icon(Icons.auto_awesome, size: 40, color: colorScheme.primary),
         const SizedBox(height: 12),
         Text(
-          'Hi! Ich kenne dein Profil, deine Ziele und dein Ernährungstagebuch.',
+          'Hi! Ich kenne dein Profil, deine Pläne, deine Ziele und dein Tagebuch.',
           style: textTheme.titleMedium,
           textAlign: TextAlign.center,
         ),
@@ -190,9 +243,36 @@ class _AssistantScreenState extends State<AssistantScreen> {
           ),
           textAlign: TextAlign.center,
         ),
+        const SizedBox(height: 12),
+        Card(
+          clipBehavior: Clip.antiAlias,
+          color: activePlans > 0
+              ? colorScheme.primaryContainer
+              : colorScheme.surfaceContainerHigh,
+          child: ListTile(
+            leading: Icon(
+              Icons.picture_as_pdf_outlined,
+              color: activePlans > 0
+                  ? colorScheme.onPrimaryContainer
+                  : colorScheme.primary,
+            ),
+            title: Text(
+              activePlans > 0
+                  ? '$activePlans ${activePlans == 1 ? 'Plan' : 'Pläne'} aktiv'
+                  : 'Ernährungs- / Trainingsplan hinterlegen',
+            ),
+            subtitle: Text(
+              activePlans > 0
+                  ? 'Dein Coach orientiert sich bei Empfehlungen daran.'
+                  : 'PDF hochladen oder Text einfügen, damit dein Coach danach plant.',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _openPlans,
+          ),
+        ),
         if (provider.missingApiKeyMessage != null || profile.aboutMe.isEmpty)
           Card(
-            margin: const EdgeInsets.only(top: 16),
+            margin: const EdgeInsets.only(top: 12),
             color: colorScheme.secondaryContainer,
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -248,6 +328,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
   }
 
   Widget _buildInputBar(MainProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 8, 8),
       child: Row(
@@ -256,7 +337,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
           Expanded(
             child: AppTextField(
               controller: _inputController,
-              hint: 'Frag deinen Coach …',
+              hint: _isListening ? 'Ich höre zu …' : 'Frag deinen Coach …',
               textCapitalization: TextCapitalization.sentences,
               keyboardType: TextInputType.multiline,
               maxLines: 5,
@@ -268,6 +349,20 @@ class _AssistantScreenState extends State<AssistantScreen> {
               ),
             ),
           ),
+          if (VoiceInputService.isPlatformSupported) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: _isListening ? 'Aufnahme stoppen' : 'Spracheingabe',
+              style: _isListening
+                  ? IconButton.styleFrom(
+                      backgroundColor: colorScheme.errorContainer,
+                      foregroundColor: colorScheme.onErrorContainer,
+                    )
+                  : null,
+              icon: Icon(_isListening ? Icons.stop : Icons.mic_none),
+              onPressed: provider.assistantBusy ? null : _toggleVoice,
+            ),
+          ],
           const SizedBox(width: 4),
           ListenableBuilder(
             listenable: _inputController,

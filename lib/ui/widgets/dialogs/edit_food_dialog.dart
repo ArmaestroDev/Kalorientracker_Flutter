@@ -30,6 +30,7 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
   /// Values per unit of amount, used to rescale when the amount changes
   late double _baseAmount;
   late List<double> _baseValues;
+  double _portionMultiplier = 1.0;
   bool _submitted = false;
 
   bool get _hasAmount =>
@@ -64,6 +65,7 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
         ? (parseLocalizedNumber(_amountController.text) ??
               widget.foodEntry.amount!)
         : 1;
+    _portionMultiplier = 1.0;
     _baseValues = _valueControllers
         .map((c) => parseLocalizedNumber(c.text) ?? 0)
         .toList();
@@ -82,28 +84,21 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
   void _onAmountChanged(String text) {
     final amount = parseLocalizedNumber(text);
     if (amount == null || amount <= 0 || _baseAmount <= 0) return;
-    _applyFactor(amount / _baseAmount, fromBase: true);
+    _applyFactor(amount / _baseAmount);
   }
 
-  void _applyFactor(double factor, {bool fromBase = false}) {
+  void _applyFactor(double factor) {
     setState(() {
       final controllers = _valueControllers;
       for (var i = 0; i < controllers.length; i++) {
-        final source = fromBase
-            ? _baseValues[i]
-            : (parseLocalizedNumber(controllers[i].text) ?? 0);
-        controllers[i].text = (source * factor).round().toString();
-      }
-      if (!fromBase) {
-        if (_hasAmount) {
-          final amount = parseLocalizedNumber(_amountController.text);
-          if (amount != null) {
-            _amountController.text = formatLocalizedNumber(amount * factor);
-          }
-        }
-        _resetScaleBase();
+        controllers[i].text = (_baseValues[i] * factor).round().toString();
       }
     });
+  }
+
+  void _applyPortionChip(double chipFactor) {
+    _portionMultiplier *= chipFactor;
+    _applyFactor(_portionMultiplier);
   }
 
   void _onValueEdited(String _) {
@@ -159,16 +154,19 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
   }
 
   void _recalculate() {
-    if (_nameController.text.trim().isEmpty) {
+    final parsedAmount = _hasAmount
+        ? parseLocalizedNumber(_amountController.text)
+        : null;
+    if (_nameController.text.trim().isEmpty ||
+        (_hasAmount && (parsedAmount == null || parsedAmount <= 0))) {
       setState(() => _submitted = true);
       return;
     }
     widget.onRecalculate(
       widget.foodEntry.copyWith(
         name: _nameController.text.trim(),
-        amount: _hasAmount
-            ? parseLocalizedNumber(_amountController.text)
-            : null,
+        amount: parsedAmount,
+        clearAmount: !_hasAmount,
       ),
     );
     Navigator.of(context).pop();
@@ -205,6 +203,12 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
                 label: 'Menge',
                 suffix: widget.foodEntry.unit,
                 helper: 'Kalorien und Makros werden automatisch angepasst',
+                errorText:
+                    _submitted &&
+                        ((parseLocalizedNumber(_amountController.text) ?? 0) <=
+                            0)
+                    ? 'Ungültige Zahl'
+                    : null,
                 onChanged: _onAmountChanged,
               ),
               const SizedBox(height: 12),
@@ -219,7 +223,7 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
                       label: Text(
                         '${formatLocalizedNumber(factor, decimals: 2)}×',
                       ),
-                      onPressed: () => _applyFactor(factor),
+                      onPressed: () => _applyPortionChip(factor),
                     ),
                 ],
               ),

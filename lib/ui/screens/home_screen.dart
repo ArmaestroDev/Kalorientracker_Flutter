@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../logic/providers/main_provider.dart';
+import '../../logic/widget_bridge.dart';
 import '../../data/models/food_entry.dart';
 import '../../data/models/activity_entry.dart';
 import '../theme/app_theme.dart';
@@ -24,20 +25,62 @@ import 'photo_input_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onOpenHistory;
+  final String? pendingWidgetAction;
+  final VoidCallback? onWidgetActionHandled;
 
-  const HomeScreen({super.key, this.onOpenHistory});
+  const HomeScreen({
+    super.key,
+    this.onOpenHistory,
+    this.pendingWidgetAction,
+    this.onWidgetActionHandled,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  String? _lastHandledWidgetAction;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleWidgetAction();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pendingWidgetAction != oldWidget.pendingWidgetAction) {
+      _scheduleWidgetAction();
+    }
+  }
+
+  void _scheduleWidgetAction() {
+    final action = widget.pendingWidgetAction;
+    if (action == null || action == _lastHandledWidgetAction) return;
+    _lastHandledWidgetAction = action;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onWidgetActionHandled?.call();
+      _lastHandledWidgetAction = null;
+      switch (action) {
+        case WidgetLaunchAction.addText:
+          _showUnifiedInputDialog(initialVoiceMode: false);
+        case WidgetLaunchAction.addVoice:
+          _showUnifiedInputDialog(initialVoiceMode: true);
+        case WidgetLaunchAction.addPhoto:
+          _openPhotoInput();
+      }
+    });
+  }
+
   void _showAddEntryDialog() {
     showDialog(
       context: context,
       builder: (context) => AddEntryDialog(
         onPhotoSelected: _openPhotoInput,
-        onManualSelected: _showUnifiedInputDialog,
+        onManualSelected: () => _showUnifiedInputDialog(),
         onHistorySelected: _showFoodRecallDialog,
       ),
     );
@@ -186,7 +229,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openPhotoInput() {
-    // Capture provider reference BEFORE navigation to avoid deactivated context error
     final provider = context.read<MainProvider>();
 
     Navigator.of(context).push(
@@ -195,20 +237,25 @@ class _HomeScreenState extends State<HomeScreen> {
           onBarcodeScanned: (barcode) {
             provider.fetchFoodInfoByBarcode(barcode);
           },
+          onLookupBarcode: provider.lookupBarcodeSilently,
+          onBarcodeProductFound: provider.setScannedFoodInfo,
           onPhotoTaken: (imageBytes, description) {
-            provider.addFoodFromImage(imageBytes, description);
+            return provider.addFoodFromImage(imageBytes, description);
           },
         ),
       ),
     );
   }
 
-  void _showUnifiedInputDialog() {
+  void _showUnifiedInputDialog({bool initialVoiceMode = false}) {
+    final provider = context.read<MainProvider>();
     showDialog(
       context: context,
       builder: (context) => UnifiedInputDialog(
+        initialVoiceMode: initialVoiceMode,
+        missingApiKeyMessage: provider.missingApiKeyMessage,
         onSubmit: (name, description) {
-          context.read<MainProvider>().addUnifiedEntry(name, description);
+          provider.addUnifiedEntry(name, description);
         },
       ),
     );
@@ -295,7 +342,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final scannedFoodInfo = provider.scannedFoodInfo;
         if (scannedFoodInfo != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (provider.scannedFoodInfo != scannedFoodInfo) return;
+            if (!mounted || provider.scannedFoodInfo != scannedFoodInfo) return;
             provider.clearScannedFoodInfo();
             showDialog(
               context: context,
@@ -330,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               IconButton(
+                tooltip: 'Profil & Ziele',
                 icon: const Icon(Icons.person),
                 onPressed: () {
                   Navigator.of(context).push(

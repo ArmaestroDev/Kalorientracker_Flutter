@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import '../models/chat_message.dart';
+import '../models/user_plan.dart';
 import '../services/generative_service.dart';
 import '../services/food_api_service.dart';
 
@@ -16,12 +17,16 @@ class UnifiedEntry {
 /// Repository that handles all AI and barcode lookups
 class ApiServiceRepository {
   GenerativeService? _apiService;
-  final FoodApiService _foodApiService = FoodApiService();
+  final FoodApiService _foodApiService;
 
-  ApiServiceRepository([this._apiService]);
+  ApiServiceRepository([this._apiService, FoodApiService? foodApiService])
+    : _foodApiService = foodApiService ?? FoodApiService();
 
   void updateService(GenerativeService service) {
-    _apiService = service;
+    if (!identical(_apiService, service)) {
+      _apiService?.close();
+      _apiService = service;
+    }
   }
 
   GenerativeService get _service {
@@ -137,6 +142,26 @@ class ApiServiceRepository {
       throw const AiException('Auf dem Foto wurde kein Essen erkannt.');
     }
     return info;
+  }
+
+  /// Extracts a clean, structured Markdown version of a scanned or dense PDF plan
+  Future<String> extractPlanFromPdf(
+    Uint8List pdfBytes,
+    PlanType type,
+    String fileName,
+  ) {
+    return _service.generate(
+      AiRequest.single(
+        system:
+            'Du extrahierst einen ${type.label} aus einer PDF-Datei für einen persönlichen Ernährungs- und Fitnesscoach. '
+            'Gib den vollständigen Inhalt strukturiert als klares deutsches Markdown wieder (Wochentage, Mahlzeiten, Mengen/Makros, Übungen, Sätze/Wiederholungen, Regeln). '
+            'Lasse keine wichtigen Angaben weg und erfinde nichts hinzu.',
+        prompt:
+            'Bitte lies die angehängte PDF-Datei "$fileName" (${type.label}) vollständig aus und fasse alle Plandaten übersichtlich zusammen.',
+        pdfBytes: pdfBytes,
+        maxTokens: 8000,
+      ),
+    );
   }
 
   Future<String> chat({

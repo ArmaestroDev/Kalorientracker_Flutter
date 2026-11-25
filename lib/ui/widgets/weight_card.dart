@@ -29,9 +29,12 @@ class WeightCard extends StatelessWidget {
 
     final average = averageThisWeek;
     final previous = averagePreviousWeek;
-    final change = average != null && previous != null
+    final rawChange = average != null && previous != null
         ? average - previous
         : null;
+    final roundedChange = rawChange == null
+        ? null
+        : (rawChange * 10).round() / 10;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -63,17 +66,17 @@ class WeightCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (change != null)
+              if (roundedChange != null)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${change > 0 ? '+' : ''}${change.toStringAsFixed(1).replaceAll('.', ',')} kg',
+                      '${roundedChange > 0 ? '+' : ''}${roundedChange.toStringAsFixed(1).replaceAll('.', ',')} kg',
                       style: textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.bold,
-                        color: lowerIsBetter == null || change == 0
+                        color: lowerIsBetter == null || roundedChange == 0
                             ? colorScheme.onSurface
-                            : (change < 0) == lowerIsBetter
+                            : (roundedChange < 0) == lowerIsBetter
                             ? AppColors.of(context).success
                             : AppColors.of(context).danger,
                       ),
@@ -82,7 +85,10 @@ class WeightCard extends StatelessWidget {
                   ],
                 )
               else
-                Icon(Icons.add, color: colorScheme.onSurfaceVariant),
+                Icon(
+                  weightOnSelectedDate != null ? Icons.edit_outlined : Icons.add,
+                  color: colorScheme.onSurfaceVariant,
+                ),
             ],
           ),
         ),

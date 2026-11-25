@@ -112,6 +112,12 @@ class UserProfile {
     };
   }
 
+  static T _enumByIndex<T extends Enum>(List<T> values, Object? raw, T fallback) {
+    final idx = (raw as num?)?.toInt();
+    if (idx != null && idx >= 0 && idx < values.length) return values[idx];
+    return fallback;
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'geminiApiKey': geminiApiKey,
@@ -139,14 +145,21 @@ class UserProfile {
       openaiApiKey: json['openaiApiKey'] as String? ?? '',
       grokApiKey: json['grokApiKey'] as String? ?? '',
       modelOverrides: _modelOverridesFromJson(json['modelOverrides']),
-      selectedProvider:
-          AiProvider.values[json['selectedProvider'] as int? ?? 0],
-      age: json['age'] as int? ?? 0,
+      selectedProvider: _enumByIndex(
+        AiProvider.values,
+        json['selectedProvider'],
+        AiProvider.gemini,
+      ),
+      age: (json['age'] as num?)?.toInt() ?? 0,
       weightKg: (json['weightKg'] as num?)?.toDouble() ?? 0.0,
       heightCm: (json['heightCm'] as num?)?.toDouble() ?? 0.0,
       bodyFatPercent: (json['bodyFatPercent'] as num?)?.toDouble() ?? 0.0,
-      gender: Gender.values[json['gender'] as int? ?? 0],
-      activityLevel: ActivityLevel.values[json['activityLevel'] as int? ?? 0],
+      gender: _enumByIndex(Gender.values, json['gender'], Gender.male),
+      activityLevel: _enumByIndex(
+        ActivityLevel.values,
+        json['activityLevel'],
+        ActivityLevel.sedentary,
+      ),
       goal: FitnessGoal.fromStored(json['goal']),
       eatBackActivityCalories:
           json['eatBackActivityCalories'] as bool? ?? false,

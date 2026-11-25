@@ -2,15 +2,31 @@ import '../data/models/activity_entry.dart';
 import '../data/models/food_entry.dart';
 import '../data/models/weight_entry.dart';
 
-DateTime dayOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+DateTime dayOnly(DateTime d) {
+  final local = d.isUtc ? d.toLocal() : d;
+  return DateTime(local.year, local.month, local.day);
+}
 
-DateTime addDays(DateTime d, int days) =>
-    DateTime(d.year, d.month, d.day + days);
+DateTime addDays(DateTime d, int days) {
+  final local = d.isUtc ? d.toLocal() : d;
+  return DateTime(local.year, local.month, local.day + days);
+}
 
-DateTime startOfWeek(DateTime d) => addDays(d, -(d.weekday - DateTime.monday));
+int calendarDayDiff(DateTime from, DateTime to) {
+  final f = dayOnly(from);
+  final t = dayOnly(to);
+  return DateTime.utc(t.year, t.month, t.day)
+      .difference(DateTime.utc(f.year, f.month, f.day))
+      .inDays;
+}
 
-String dayKey(DateTime d) =>
-    '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+DateTime startOfWeek(DateTime d) =>
+    addDays(d, -(dayOnly(d).weekday - DateTime.monday));
+
+String dayKey(DateTime d) {
+  final local = d.isUtc ? d.toLocal() : d;
+  return '${local.year.toString().padLeft(4, '0')}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+}
 
 /// Totals for one calendar day
 class DayStats {
@@ -78,22 +94,29 @@ class PeriodStats {
   double get avgFatPerLoggedDay => loggedDays == 0 ? 0 : fat / loggedDays;
 }
 
-/// Where the user stands in the week containing [reference]
+/// Where the user stands in the week containing [reference].
+///
+/// Unlogged past days are excluded from [budget] so skipped days do not
+/// inflate the remaining daily allowance.
 class WeekStatus {
   final PeriodStats week;
   final DateTime reference;
 
   const WeekStatus(this.week, this.reference);
 
+  Iterable<DayStats> get _countedDays =>
+      week.days.where((d) => !d.date.isBefore(reference) || d.isLogged);
+
   int get consumed => week.days
       .where((d) => !d.date.isAfter(reference))
       .fold(0, (s, d) => s + d.calories);
 
-  int get budget => week.budget;
+  int get budget => week._budgetFor(_countedDays);
+  int get fullWeekBudget => week.budget;
   int get remaining => budget - consumed;
 
-  /// Days left in the week including the reference day
-  int get remainingDays => week.end.difference(reference).inDays + 1;
+  /// Days left in the week including the reference day (DST-safe)
+  int get remainingDays => calendarDayDiff(reference, week.end) + 1;
 
   /// Remaining budget spread over the remaining days, including today
   int get perRemainingDay =>
@@ -218,7 +241,8 @@ class NutritionStats {
     required int dailyGoal,
     required bool eatBackActivity,
   }) {
-    final start = startOfWeek(reference);
+    final ref = dayOnly(reference);
+    final start = startOfWeek(ref);
     final weekDays = daily(const [], const [], start, addDays(start, 6)).map((
       empty,
     ) {
@@ -235,7 +259,7 @@ class NutritionStats {
         dailyGoal: dailyGoal,
         eatBackActivity: eatBackActivity,
       ),
-      dayOnly(reference),
+      ref,
     );
   }
 

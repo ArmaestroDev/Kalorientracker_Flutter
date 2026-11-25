@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../logic/providers/main_provider.dart';
+import '../../logic/widget_bridge.dart';
 import 'assistant_screen.dart';
 import 'history_screen.dart';
 import 'home_screen.dart';
@@ -13,14 +14,42 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   int _index = 0;
+  String? _pendingWidgetAction;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<MainProvider>().loadInitialData();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetBridge.setActionHandler(_handleWidgetAction);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final action = await WidgetBridge.consumeInitialAction();
+      if (action != null && mounted) {
+        _handleWidgetAction(action);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<MainProvider>().refreshTodayIfNeeded();
+    }
+  }
+
+  void _handleWidgetAction(String action) {
+    if (!mounted) return;
+    setState(() {
+      _index = 0;
+      _pendingWidgetAction = action;
     });
   }
 
@@ -37,7 +66,15 @@ class _AppShellState extends State<AppShell> {
       body: IndexedStack(
         index: _index,
         children: [
-          HomeScreen(onOpenHistory: () => _select(1)),
+          HomeScreen(
+            onOpenHistory: () => _select(1),
+            pendingWidgetAction: _pendingWidgetAction,
+            onWidgetActionHandled: () {
+              if (mounted && _pendingWidgetAction != null) {
+                setState(() => _pendingWidgetAction = null);
+              }
+            },
+          ),
           HistoryScreen(onOpenDay: _openDay),
           const AssistantScreen(),
         ],

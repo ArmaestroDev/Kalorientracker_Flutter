@@ -14,6 +14,7 @@ class OpenAiCompatibleService implements GenerativeService {
   final bool _supportsJsonMode;
   final String _maxTokensField;
   final http.Client _client;
+  final bool _ownsClient;
 
   OpenAiCompatibleService._(
     this._apiKey,
@@ -26,7 +27,8 @@ class OpenAiCompatibleService implements GenerativeService {
   }) : _url = url,
        _supportsJsonMode = supportsJsonMode,
        _maxTokensField = maxTokensField,
-       _client = client ?? http.Client();
+       _client = client ?? http.Client(),
+       _ownsClient = client == null;
 
   factory OpenAiCompatibleService.openAi(
     String apiKey,
@@ -57,7 +59,18 @@ class OpenAiCompatibleService implements GenerativeService {
   );
 
   @override
+  void close() {
+    if (_ownsClient) _client.close();
+  }
+
+  @override
   Future<String> generate(AiRequest request) async {
+    if (request.pdfBytes != null) {
+      throw AiException(
+        '$providerName kann gescannte Bild-PDFs nicht direkt auslesen. Nutze dafür Gemini/Claude oder kopiere den Plantext manuell.',
+      );
+    }
+
     final system = request.jsonOutput
         ? '${request.system}\n\nAntworte ausschließlich mit einem gültigen JSON-Objekt.'
         : request.system;
@@ -69,6 +82,7 @@ class OpenAiCompatibleService implements GenerativeService {
       final message = request.messages[i];
       final isLast = i == request.messages.length - 1;
       if (isLast && message.isUser && request.imageBytes != null) {
+        final mime = GenerativeService.detectImageMimeType(request.imageBytes!);
         messages.add({
           'role': 'user',
           'content': [
@@ -76,8 +90,7 @@ class OpenAiCompatibleService implements GenerativeService {
             {
               'type': 'image_url',
               'image_url': {
-                'url':
-                    'data:image/jpeg;base64,${base64Encode(request.imageBytes!)}',
+                'url': 'data:$mime;base64,${base64Encode(request.imageBytes!)}',
               },
             },
           ],
@@ -129,23 +142,32 @@ class OpenAiCompatibleService implements GenerativeService {
           final function = call['function'] as Map<String, dynamic>? ?? {};
           final rawArgs = function['arguments'];
           Map<String, dynamic> args = {};
+          String? parseError;
           if (rawArgs is String && rawArgs.trim().isNotEmpty) {
             try {
-              args = (jsonDecode(rawArgs) as Map).cast<String, dynamic>();
-            } catch (_) {}
+              final decoded = jsonDecode(rawArgs);
+              if (decoded is Map) {
+                args = decoded.cast<String, dynamic>();
+              } else {
+                parseError = 'Tool-Argumente sind kein JSON-Objekt.';
+              }
+            } catch (e) {
+              parseError = 'Ungültiges JSON in Tool-Argumenten: $e';
+            }
           } else if (rawArgs is Map) {
             args = rawArgs.cast<String, dynamic>();
           }
+          final toolResult = parseError != null
+              ? {'error': parseError}
+              : await GenerativeService.runTool(
+                  request,
+                  function['name'] as String? ?? '',
+                  args,
+                );
           messages.add({
             'role': 'tool',
             'tool_call_id': call['id'],
-            'content': jsonEncode(
-              await GenerativeService.runTool(
-                request,
-                function['name'] as String? ?? '',
-                args,
-              ),
-            ),
+            'content': jsonEncode(toolResult),
           });
         }
         continue;
@@ -188,7 +210,7 @@ class OpenAiCompatibleService implements GenerativeService {
             body: jsonEncode(body),
           )
           .timeout(
-            request.imageBytes != null
+            request.hasMedia
                 ? GenerativeService.imageTimeout
                 : GenerativeService.textTimeout,
           );
@@ -207,6 +229,6 @@ class OpenAiCompatibleService implements GenerativeService {
         responseBody,
       );
     }
-    return jsonDecode(responseBody) as Map<String, dynamic>;
+    return GenerativeService.decodeJsonObject(providerName, responseBody);
   }
 }

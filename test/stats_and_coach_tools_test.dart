@@ -76,10 +76,10 @@ void main() {
         eatBackActivity: false,
       );
       expect(week.consumed, 5900);
-      expect(week.budget, 16100);
-      expect(week.remaining, 10200);
+      expect(week.budget, 13800);
+      expect(week.remaining, 7900);
       expect(week.remainingDays, 4);
-      expect(week.perRemainingDay, 2550);
+      expect(week.perRemainingDay, 1975);
       expect(week.unloggedPastDays, 1);
     });
 
@@ -96,7 +96,7 @@ void main() {
         dailyGoal: 2300,
         eatBackActivity: true,
       );
-      expect(week.budget, 16700);
+      expect(week.budget, 14400);
     });
 
     test('weekly and monthly grouping', () {

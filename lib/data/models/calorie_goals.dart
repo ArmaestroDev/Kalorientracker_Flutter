@@ -31,11 +31,11 @@ class CalorieGoals {
 
   factory CalorieGoals.fromJson(Map<String, dynamic> json) {
     return CalorieGoals(
-      calories: json['calories'] as int? ?? 0,
-      proteinGrams: json['proteinGrams'] as int? ?? 0,
-      carbsGrams: json['carbsGrams'] as int? ?? 0,
-      fatGrams: json['fatGrams'] as int? ?? 0,
-      maintenanceCalories: json['maintenanceCalories'] as int? ?? 0,
+      calories: (json['calories'] as num?)?.toInt() ?? 0,
+      proteinGrams: (json['proteinGrams'] as num?)?.toInt() ?? 0,
+      carbsGrams: (json['carbsGrams'] as num?)?.toInt() ?? 0,
+      fatGrams: (json['fatGrams'] as num?)?.toInt() ?? 0,
+      maintenanceCalories: (json['maintenanceCalories'] as num?)?.toInt() ?? 0,
     );
   }
 }

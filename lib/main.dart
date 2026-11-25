@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'logic/providers/main_provider.dart';
@@ -24,7 +25,7 @@ void main() async {
         logRepository: logRepository,
         prefsRepository: prefsRepository,
         apiServiceRepository: apiServiceRepository,
-      ),
+      )..loadInitialData(),
       child: const KalorientrackerApp(),
     ),
   );
@@ -40,6 +41,13 @@ class KalorientrackerApp extends StatelessWidget {
         return MaterialApp(
           title: 'Kalorientracker',
           debugShowCheckedModeBanner: false,
+          locale: const Locale('de', 'DE'),
+          supportedLocales: const [Locale('de', 'DE')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
           theme: AppTheme.light(provider.currentTheme),
           darkTheme: AppTheme.dark(provider.currentTheme),
           themeMode: AppTheme.option(provider.currentTheme).mode,

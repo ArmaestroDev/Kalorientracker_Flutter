@@ -15,13 +15,25 @@ class FoodItemDao {
     );
   }
 
+  Future<void> deleteFoodItem(String id) async {
+    final db = await _appDatabase.database;
+    await db.delete('food_items', where: 'id = ?', whereArgs: [id]);
+  }
+
+  static String _escapeLike(String input) => input
+      .replaceAll('\\', '\\\\')
+      .replaceAll('%', '\\%')
+      .replaceAll('_', '\\_');
+
   Future<List<FoodItem>> searchFoods(String query) async {
     final db = await _appDatabase.database;
+    final escaped = _escapeLike(query.trim());
+    final pattern = '%$escaped%';
     final maps = await db.query(
       'food_items',
-      where: 'name LIKE ? OR category LIKE ?',
-      whereArgs: ['%$query%', '%$query%'],
-      orderBy: 'last_used DESC', // Most recent first
+      where: "name LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\'",
+      whereArgs: [pattern, pattern],
+      orderBy: 'last_used DESC',
       limit: 50,
     );
     return maps.map((map) => FoodItem.fromMap(map)).toList();
@@ -40,11 +52,12 @@ class FoodItemDao {
   Future<List<String>> getAllCategories() async {
     final db = await _appDatabase.database;
     final result = await db.rawQuery(
-      'SELECT DISTINCT category FROM food_items ORDER BY category ASC',
+      "SELECT DISTINCT category FROM food_items WHERE category IS NOT NULL AND category != '' ORDER BY category ASC",
     );
     return result
-        .map((row) => row['category'] as String)
-        .where((c) => c.isNotEmpty)
+        .map((row) => row['category'])
+        .whereType<String>()
+        .where((c) => c.trim().isNotEmpty)
         .toList();
   }
 

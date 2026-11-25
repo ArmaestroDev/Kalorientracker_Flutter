@@ -9,12 +9,19 @@ class GeminiApiService implements GenerativeService {
   @override
   final String model;
   final http.Client _client;
+  final bool _ownsClient;
 
   GeminiApiService(this._apiKey, this.model, {http.Client? client})
-    : _client = client ?? http.Client();
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null;
 
   @override
   String get providerName => 'Gemini';
+
+  @override
+  void close() {
+    if (_ownsClient) _client.close();
+  }
 
   @override
   Future<String> generate(AiRequest request) async {
@@ -28,8 +35,18 @@ class GeminiApiService implements GenerativeService {
       if (isLast && message.isUser && request.imageBytes != null) {
         parts.add({
           'inline_data': {
-            'mime_type': 'image/jpeg',
+            'mime_type': GenerativeService.detectImageMimeType(
+              request.imageBytes!,
+            ),
             'data': base64Encode(request.imageBytes!),
+          },
+        });
+      }
+      if (isLast && message.isUser && request.pdfBytes != null) {
+        parts.add({
+          'inline_data': {
+            'mime_type': 'application/pdf',
+            'data': base64Encode(request.pdfBytes!),
           },
         });
       }
@@ -141,7 +158,7 @@ class GeminiApiService implements GenerativeService {
             body: jsonEncode(body),
           )
           .timeout(
-            request.imageBytes != null
+            request.hasMedia
                 ? GenerativeService.imageTimeout
                 : GenerativeService.textTimeout,
           );
@@ -160,6 +177,6 @@ class GeminiApiService implements GenerativeService {
         responseBody,
       );
     }
-    return jsonDecode(responseBody) as Map<String, dynamic>;
+    return GenerativeService.decodeJsonObject(providerName, responseBody);
   }
 }

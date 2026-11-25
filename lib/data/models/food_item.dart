@@ -22,6 +22,30 @@ class FoodItem {
     required this.lastUsed,
   });
 
+  FoodItem copyWith({
+    String? id,
+    String? name,
+    String? category,
+    double? caloriesPer100g,
+    double? proteinPer100g,
+    double? carbsPer100g,
+    double? fatPer100g,
+    String? defaultUnit,
+    DateTime? lastUsed,
+  }) {
+    return FoodItem(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      category: category ?? this.category,
+      caloriesPer100g: caloriesPer100g ?? this.caloriesPer100g,
+      proteinPer100g: proteinPer100g ?? this.proteinPer100g,
+      carbsPer100g: carbsPer100g ?? this.carbsPer100g,
+      fatPer100g: fatPer100g ?? this.fatPer100g,
+      defaultUnit: defaultUnit ?? this.defaultUnit,
+      lastUsed: lastUsed ?? this.lastUsed,
+    );
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -37,16 +61,19 @@ class FoodItem {
   }
 
   factory FoodItem.fromMap(Map<String, dynamic> map) {
+    final lastUsedRaw = map['last_used'] as String?;
     return FoodItem(
-      id: map['id'] as String,
-      name: map['name'] as String,
+      id: map['id'] as String? ?? '',
+      name: map['name'] as String? ?? 'Unbekanntes Essen',
       category: map['category'] as String? ?? 'Allgemein',
-      caloriesPer100g: (map['calories_per_100g'] as num).toDouble(),
+      caloriesPer100g: (map['calories_per_100g'] as num?)?.toDouble() ?? 0.0,
       proteinPer100g: (map['protein_per_100g'] as num?)?.toDouble() ?? 0.0,
       carbsPer100g: (map['carbs_per_100g'] as num?)?.toDouble() ?? 0.0,
       fatPer100g: (map['fat_per_100g'] as num?)?.toDouble() ?? 0.0,
       defaultUnit: map['default_unit'] as String? ?? 'g',
-      lastUsed: DateTime.parse(map['last_used'] as String),
+      lastUsed: lastUsedRaw != null
+          ? DateTime.tryParse(lastUsedRaw) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 }

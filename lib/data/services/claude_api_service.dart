@@ -9,14 +9,21 @@ class ClaudeApiService implements GenerativeService {
   @override
   final String model;
   final http.Client _client;
+  final bool _ownsClient;
 
   static const _url = 'https://api.anthropic.com/v1/messages';
 
   ClaudeApiService(this._apiKey, this.model, {http.Client? client})
-    : _client = client ?? http.Client();
+    : _client = client ?? http.Client(),
+      _ownsClient = client == null;
 
   @override
   String get providerName => 'Claude';
+
+  @override
+  void close() {
+    if (_ownsClient) _client.close();
+  }
 
   bool get _supportsServerFallbacks =>
       model == 'claude-opus-5' || model.startsWith('claude-fable-5');
@@ -33,21 +40,32 @@ class ClaudeApiService implements GenerativeService {
     for (var i = 0; i < request.messages.length; i++) {
       final message = request.messages[i];
       final isLast = i == request.messages.length - 1;
-      if (isLast && message.isUser && request.imageBytes != null) {
-        messages.add({
-          'role': 'user',
-          'content': [
-            {
-              'type': 'image',
-              'source': {
-                'type': 'base64',
-                'media_type': 'image/jpeg',
-                'data': base64Encode(request.imageBytes!),
-              },
+      if (isLast && message.isUser && request.hasMedia) {
+        final contentBlocks = <Map<String, dynamic>>[];
+        if (request.imageBytes != null) {
+          contentBlocks.add({
+            'type': 'image',
+            'source': {
+              'type': 'base64',
+              'media_type': GenerativeService.detectImageMimeType(
+                request.imageBytes!,
+              ),
+              'data': base64Encode(request.imageBytes!),
             },
-            {'type': 'text', 'text': message.text},
-          ],
-        });
+          });
+        }
+        if (request.pdfBytes != null) {
+          contentBlocks.add({
+            'type': 'document',
+            'source': {
+              'type': 'base64',
+              'media_type': 'application/pdf',
+              'data': base64Encode(request.pdfBytes!),
+            },
+          });
+        }
+        contentBlocks.add({'type': 'text', 'text': message.text});
+        messages.add({'role': 'user', 'content': contentBlocks});
       } else {
         messages.add({
           'role': message.isUser ? 'user' : 'assistant',
@@ -102,7 +120,7 @@ class ClaudeApiService implements GenerativeService {
                 'content': jsonEncode(
                   await GenerativeService.runTool(
                     request,
-                    use['name'] as String,
+                    use['name'] as String? ?? '',
                     (use['input'] as Map?)?.cast<String, dynamic>() ?? {},
                   ),
                 ),
@@ -143,7 +161,7 @@ class ClaudeApiService implements GenerativeService {
             body: jsonEncode(body),
           )
           .timeout(
-            request.imageBytes != null
+            request.hasMedia
                 ? GenerativeService.imageTimeout
                 : GenerativeService.textTimeout,
           );
@@ -162,6 +180,6 @@ class ClaudeApiService implements GenerativeService {
         responseBody,
       );
     }
-    return jsonDecode(responseBody) as Map<String, dynamic>;
+    return GenerativeService.decodeJsonObject(providerName, responseBody);
   }
 }

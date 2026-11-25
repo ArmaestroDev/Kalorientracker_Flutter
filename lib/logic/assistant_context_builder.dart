@@ -2,14 +2,16 @@ import 'package:intl/intl.dart';
 import '../data/models/activity_entry.dart';
 import '../data/models/calorie_goals.dart';
 import '../data/models/food_entry.dart';
+import '../data/models/user_plan.dart';
 import '../data/models/user_profile.dart';
 import '../data/models/weight_entry.dart';
 import 'nutrition_stats.dart';
 
-/// Builds the always-included system prompt: who the user is, today, this
-/// week and a short recent trend. Older or more detailed data is fetched by
-/// the model through the coach tools only when a question needs it.
+/// Builds the always-included system prompt: who the user is, active plans,
+/// today, this week and a short recent trend.
 class AssistantContextBuilder {
+  static const int _maxPlanCharsInline = 12000;
+
   static String build({
     required UserProfile profile,
     required CalorieGoals goals,
@@ -21,18 +23,25 @@ class AssistantContextBuilder {
     required WeekStatus week,
     required List<DayStats> recentDays,
     required List<WeightEntry> recentWeights,
+    List<UserPlan> plans = const [],
+    List<FoodEntry>? selectedDayFoods,
+    List<ActivityEntry>? selectedDayActivities,
+    int? selectedDayBudget,
   }) {
     final longDate = DateFormat('EEEE, d. MMMM y', 'de_DE');
     final shortDate = DateFormat('EE dd.MM.', 'de_DE');
     final time = DateFormat('HH:mm', 'de_DE');
     final today = dayOnly(now);
+    final activePlans = plans
+        .where((p) => p.isActive && p.content.trim().isNotEmpty)
+        .toList();
     final sb = StringBuffer();
 
     sb.writeln(
       'Du bist der persönliche Ernährungs- und Trainingscoach des Nutzers in seiner Kalorien-Tracker-App.',
     );
     sb.writeln(
-      'Unten stehen Profil, heutiger Tag, die aktuelle Woche und die letzten 7 Tage. Für alles Weitere (ältere Tage, einzelne Mahlzeiten, Wochen-/Monatsvergleiche, Gewichtsverlauf, Suche nach Lebensmitteln) rufst du die Tools auf.',
+      'Unten stehen Profil, hinterlegte Pläne, heutiger Tag, die aktuelle Woche und die letzten 7 Tage. Für alles Weitere (ältere Tage, einzelne Mahlzeiten, Wochen-/Monatsvergleiche, Gewichtsverlauf, Suche nach Lebensmitteln) rufst du die Tools auf.',
     );
     sb.writeln();
     sb.writeln('Regeln:');
@@ -54,6 +63,14 @@ class AssistantContextBuilder {
     );
     sb.writeln(
       '- Schlage Essen passend zu Alltag und Vorlieben vor (siehe "Über mich").',
+    );
+    if (activePlans.isNotEmpty) {
+      sb.writeln(
+        '- Orientiere deine Mahlzeiten-, Makro-, Timing- und Trainingsempfehlungen immer aktiv an den hinterlegten Ernährungs- und Trainingsplänen des Nutzers und passe sie an das aktuelle Budget an.',
+      );
+    }
+    sb.writeln(
+      '- Logge Mahlzeiten, Aktivitäten oder Gewicht nur mit den log_*-Tools, wenn der Nutzer ausdrücklich darum bittet.',
     );
     sb.writeln(
       '- Keine medizinischen Diagnosen; bei Beschwerden an Ärzte verweisen.',
@@ -85,6 +102,26 @@ class AssistantContextBuilder {
     }
     sb.writeln();
 
+    if (activePlans.isNotEmpty) {
+      sb.writeln('## Persönliche Pläne (Ernährungs- & Trainingspläne)');
+      var remainingChars = _maxPlanCharsInline;
+      for (final plan in activePlans) {
+        sb.writeln('### ${plan.type.label}: ${plan.title} (id: ${plan.id})');
+        final content = plan.content.trim();
+        if (content.length <= remainingChars) {
+          sb.writeln(content);
+          remainingChars -= content.length;
+        } else {
+          final slice = remainingChars > 200
+              ? '${content.substring(0, remainingChars)}\n[… gekürzt – rufe get_user_plan(plan_id: "${plan.id}") für den vollständigen Plan auf]'
+              : '[Inhalt lang – rufe get_user_plan(plan_id: "${plan.id}") auf]';
+          sb.writeln(slice);
+          remainingChars = 0;
+        }
+        sb.writeln();
+      }
+    }
+
     sb.writeln('## Ziele');
     if (goals.calories > 0) {
       sb.writeln(goals.toPromptSummary());
@@ -98,58 +135,47 @@ class AssistantContextBuilder {
     }
     sb.writeln();
 
-    final dayLabel = dayOnly(selectedDate) == today
+    final primaryDay = selectedDayFoods != null
+        ? today
+        : dayOnly(selectedDate);
+    final primaryLabel = primaryDay == today
         ? 'Heute'
-        : shortDate.format(selectedDate);
-    final eaten = dayFoods.fold(0, (s, f) => s + f.calories);
-    final protein = dayFoods.fold(0, (s, f) => s + f.protein);
-    sb.writeln('## $dayLabel');
-    if (dayFoods.isEmpty) {
-      sb.writeln('Noch nichts geloggt.');
-    } else {
-      for (final f in dayFoods) {
-        final amount = f.amount != null && f.unit != null
-            ? ' (${_num(f.amount!)} ${f.unit})'
-            : '';
-        sb.writeln(
-          '- ${f.name}$amount: ${f.calories} kcal, P ${f.protein} g, K ${f.carbs} g, F ${f.fat} g',
-        );
-      }
-      sb.writeln(
-        'Summe: $eaten kcal, P $protein g, K ${dayFoods.fold(0, (s, f) => s + f.carbs)} g, F ${dayFoods.fold(0, (s, f) => s + f.fat)} g',
+        : shortDate.format(primaryDay);
+    _writeDaySection(
+      sb,
+      label: primaryLabel,
+      foods: dayFoods,
+      activities: dayActivities,
+      dayBudget: dayBudget,
+      goals: goals,
+    );
+
+    if (selectedDayFoods != null && dayOnly(selectedDate) != today) {
+      _writeDaySection(
+        sb,
+        label: 'Geöffneter Tag (${shortDate.format(selectedDate)})',
+        foods: selectedDayFoods,
+        activities: selectedDayActivities ?? const [],
+        dayBudget: selectedDayBudget ?? goals.calories,
+        goals: goals,
       );
     }
-    for (final a in dayActivities) {
-      sb.writeln('- Aktivität: ${a.name}, ${a.caloriesBurned} kcal');
-    }
-    if (goals.calories > 0) {
-      final remaining = dayBudget - eaten;
-      sb.writeln(
-        remaining >= 0
-            ? 'Tagesbudget: noch $remaining von $dayBudget kcal.'
-            : 'Tagesbudget um ${-remaining} kcal überschritten ($dayBudget kcal).',
-      );
-      if (goals.proteinGrams > protein) {
-        sb.writeln('Protein noch offen: ${goals.proteinGrams - protein} g.');
-      }
-    }
-    sb.writeln();
 
     if (goals.calories > 0) {
       sb.writeln(
         '## Diese Woche (${shortDate.format(week.week.start)} – ${shortDate.format(week.week.end)})',
       );
       sb.writeln(
-        'Gegessen bis einschließlich $dayLabel: ${_thousands(week.consumed)} kcal von ${_thousands(week.budget)} kcal Wochenbudget.',
+        'Gegessen bis einschließlich $primaryLabel: ${_thousands(week.consumed)} kcal von ${_thousands(week.budget)} kcal Wochenbudget.',
       );
       sb.writeln(
         week.remaining >= 0
-            ? 'Übrig für die Woche: ${_thousands(week.remaining)} kcal, verteilt auf ${week.remainingDays} verbleibende Tage (inkl. $dayLabel) ≈ ${_thousands(week.perRemainingDay)} kcal/Tag.'
+            ? 'Übrig für die Woche: ${_thousands(week.remaining)} kcal, verteilt auf ${week.remainingDays} verbleibende Tage (inkl. $primaryLabel) ≈ ${_thousands(week.perRemainingDay)} kcal/Tag.'
             : 'Wochenbudget um ${_thousands(-week.remaining)} kcal überschritten.',
       );
       if (week.unloggedPastDays > 0) {
         sb.writeln(
-          'Achtung: ${week.unloggedPastDays} vergangene Tage dieser Woche ohne Einträge – die Restmenge ist dadurch zu hoch.',
+          'Hinweis: ${week.unloggedPastDays} vergangene Tage dieser Woche ohne Einträge (im Wochenbudget oben bereits herausgerechnet).',
         );
       }
       sb.writeln();
@@ -186,6 +212,49 @@ class AssistantContextBuilder {
     }
 
     return sb.toString();
+  }
+
+  static void _writeDaySection(
+    StringBuffer sb, {
+    required String label,
+    required List<FoodEntry> foods,
+    required List<ActivityEntry> activities,
+    required int dayBudget,
+    required CalorieGoals goals,
+  }) {
+    final eaten = foods.fold(0, (s, f) => s + f.calories);
+    final protein = foods.fold(0, (s, f) => s + f.protein);
+    sb.writeln('## $label');
+    if (foods.isEmpty) {
+      sb.writeln('Noch nichts geloggt.');
+    } else {
+      for (final f in foods) {
+        final amount = f.amount != null && f.unit != null && f.unit!.isNotEmpty
+            ? ' (${_num(f.amount!)} ${f.unit})'
+            : '';
+        sb.writeln(
+          '- ${f.name}$amount: ${f.calories} kcal, P ${f.protein} g, K ${f.carbs} g, F ${f.fat} g',
+        );
+      }
+      sb.writeln(
+        'Summe: $eaten kcal, P $protein g, K ${foods.fold(0, (s, f) => s + f.carbs)} g, F ${foods.fold(0, (s, f) => s + f.fat)} g',
+      );
+    }
+    for (final a in activities) {
+      sb.writeln('- Aktivität: ${a.name}, ${a.caloriesBurned} kcal');
+    }
+    if (goals.calories > 0) {
+      final remaining = dayBudget - eaten;
+      sb.writeln(
+        remaining >= 0
+            ? 'Tagesbudget: noch $remaining von $dayBudget kcal.'
+            : 'Tagesbudget um ${-remaining} kcal überschritten ($dayBudget kcal).',
+      );
+      if (goals.proteinGrams > protein) {
+        sb.writeln('Protein noch offen: ${goals.proteinGrams - protein} g.');
+      }
+    }
+    sb.writeln();
   }
 
   static String _num(double value) {

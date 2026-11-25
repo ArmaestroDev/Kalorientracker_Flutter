@@ -86,6 +86,9 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
               errorText: _submitted && _nameController.text.trim().isEmpty
                   ? 'Pflichtfeld'
                   : null,
+              onChanged: (_) {
+                if (_submitted) setState(() {});
+              },
             ),
             const SizedBox(height: 12),
             AppTextField.number(
@@ -95,6 +98,10 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
               errorText: _submitted && _calories == null
                   ? 'Ungültige Zahl'
                   : null,
+              onChanged: (_) {
+                if (_submitted) setState(() {});
+              },
+              onSubmitted: (_) => _saveManual(),
             ),
             const SizedBox(height: 16),
             OutlinedButton.icon(

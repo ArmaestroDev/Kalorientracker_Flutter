@@ -2,6 +2,7 @@ import 'package:intl/intl.dart';
 import '../data/models/activity_entry.dart';
 import '../data/models/calorie_goals.dart';
 import '../data/models/food_entry.dart';
+import '../data/models/user_plan.dart';
 import '../data/models/user_profile.dart';
 import '../data/models/weight_entry.dart';
 import '../data/services/generative_service.dart';
@@ -9,11 +10,15 @@ import 'nutrition_stats.dart';
 
 typedef RangeLoader<T> = Future<List<T>> Function(DateTime start, DateTime end);
 
-/// Data tools the coach can call, so it only loads what a question needs
+/// Data and action tools the coach can call on demand
 class CoachTools {
   final RangeLoader<FoodEntry> loadFoods;
   final RangeLoader<ActivityEntry> loadActivities;
   final RangeLoader<WeightEntry> loadWeights;
+  final Future<List<UserPlan>> Function()? loadPlans;
+  final Future<void> Function(FoodEntry entry)? onLogFood;
+  final Future<void> Function(ActivityEntry entry)? onLogActivity;
+  final Future<void> Function(WeightEntry entry)? onLogWeight;
   final UserProfile profile;
   final CalorieGoals goals;
   final DateTime today;
@@ -25,6 +30,10 @@ class CoachTools {
     required this.loadFoods,
     required this.loadActivities,
     required this.loadWeights,
+    this.loadPlans,
+    this.onLogFood,
+    this.onLogActivity,
+    this.onLogWeight,
     required this.profile,
     required this.goals,
     required this.today,
@@ -113,6 +122,70 @@ class CoachTools {
         'required': ['start_date', 'end_date'],
       },
     ),
+    const AiTool(
+      name: 'get_user_plan',
+      description:
+          'Lädt den vollständigen Text eines gespeicherten Ernährungs- oder Trainingsplans anhand der plan_id (oder listet alle aktiven Pläne auf, falls plan_id fehlt).',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'plan_id': {'type': 'string', 'description': 'ID des Plans'},
+        },
+      },
+    ),
+    const AiTool(
+      name: 'log_food_entry',
+      description:
+          'Trägt eine Mahlzeit oder ein Lebensmittel ins Tagebuch ein. Nur aufrufen, wenn der Nutzer ausdrücklich darum bittet.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'name': {'type': 'string', 'description': 'Name der Mahlzeit'},
+          'calories': {'type': 'integer', 'description': 'Kalorien in kcal'},
+          'protein': {'type': 'integer', 'description': 'Protein in Gramm'},
+          'carbs': {'type': 'integer', 'description': 'Kohlenhydrate in Gramm'},
+          'fat': {'type': 'integer', 'description': 'Fett in Gramm'},
+          'amount': {'type': 'number', 'description': 'Menge, optional'},
+          'unit': {
+            'type': 'string',
+            'enum': ['g', 'ml', 'Stk', 'Portion'],
+            'description': 'Einheit, optional',
+          },
+          'date': _date,
+        },
+        'required': ['name', 'calories', 'protein', 'carbs', 'fat'],
+      },
+    ),
+    const AiTool(
+      name: 'log_activity_entry',
+      description:
+          'Trägt eine sportliche Aktivität ins Tagebuch ein. Nur aufrufen, wenn der Nutzer ausdrücklich darum bittet.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'name': {'type': 'string', 'description': 'Name inkl. Dauer'},
+          'calories_burned': {
+            'type': 'integer',
+            'description': 'Zusätzlich verbrannte Kalorien (netto)',
+          },
+          'date': _date,
+        },
+        'required': ['name', 'calories_burned'],
+      },
+    ),
+    const AiTool(
+      name: 'log_weight_entry',
+      description:
+          'Speichert einen Gewichtseintrag in kg. Nur aufrufen, wenn der Nutzer ausdrücklich darum bittet.',
+      parameters: {
+        'type': 'object',
+        'properties': {
+          'weight_kg': {'type': 'number', 'description': 'Gewicht in kg'},
+          'date': _date,
+        },
+        'required': ['weight_kg'],
+      },
+    ),
   ];
 
   Future<Map<String, dynamic>> execute(
@@ -130,6 +203,14 @@ class CoachTools {
         return _searchMeals(args);
       case 'get_top_foods':
         return _topFoods(args);
+      case 'get_user_plan':
+        return _getUserPlan(args);
+      case 'log_food_entry':
+        return _logFood(args);
+      case 'log_activity_entry':
+        return _logActivity(args);
+      case 'log_weight_entry':
+        return _logWeight(args);
       default:
         return {'error': 'Unbekanntes Tool: $name'};
     }
@@ -137,18 +218,55 @@ class CoachTools {
 
   static DateTime? _parseDate(Object? value) {
     if (value is! String) return null;
-    final parsed = DateTime.tryParse(value.trim());
+    final trimmed = value.trim();
+    final ymd = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(trimmed);
+    if (ymd != null) {
+      final y = int.parse(ymd.group(1)!);
+      final m = int.parse(ymd.group(2)!);
+      final d = int.parse(ymd.group(3)!);
+      final candidate = DateTime(y, m, d);
+      if (candidate.year == y && candidate.month == m && candidate.day == d) {
+        return candidate;
+      }
+      return null;
+    }
+    final parsed = DateTime.tryParse(trimmed);
     return parsed == null ? null : dayOnly(parsed);
   }
 
-  ({DateTime start, DateTime end})? _range(
+  ({({DateTime start, DateTime end})? range, String? error}) _parseRange(
     Map<String, dynamic> args, {
     int defaultDays = 30,
   }) {
-    final end = _parseDate(args['end_date']) ?? today;
-    final start = _parseDate(args['start_date']) ?? addDays(end, -defaultDays);
-    if (start.isAfter(end)) return null;
-    return (start: start, end: end);
+    final rawEnd = args['end_date'];
+    final rawStart = args['start_date'];
+    DateTime end = today;
+    if (rawEnd != null) {
+      final parsed = _parseDate(rawEnd);
+      if (parsed == null) {
+        return (range: null, error: 'end_date ist ungültig (Format YYYY-MM-DD)');
+      }
+      end = parsed;
+    }
+    DateTime start = addDays(end, -defaultDays);
+    if (rawStart != null) {
+      final parsed = _parseDate(rawStart);
+      if (parsed == null) {
+        return (
+          range: null,
+          error: 'start_date ist ungültig (Format YYYY-MM-DD)',
+        );
+      }
+      start = parsed;
+    }
+    if (start.isAfter(end)) {
+      return (range: null, error: 'start_date liegt nach end_date');
+    }
+    final days = calendarDayDiff(start, end) + 1;
+    if (days > maxRange) {
+      return (range: null, error: 'Zeitraum zu lang (max. $maxRange Tage)');
+    }
+    return (range: (start: start, end: end), error: null);
   }
 
   int _dailyBudget(int burned) =>
@@ -198,13 +316,11 @@ class CoachTools {
   }
 
   Future<Map<String, dynamic>> _periodSummary(Map<String, dynamic> args) async {
-    final range = _range(args);
-    if (range == null) return {'error': 'start_date liegt nach end_date'};
+    final parsed = _parseRange(args);
+    if (parsed.range == null) return {'error': parsed.error};
+    final range = parsed.range!;
     final groupBy = args['group_by'] as String? ?? 'week';
-    final days = range.end.difference(range.start).inDays + 1;
-    if (days > maxRange) {
-      return {'error': 'Zeitraum zu lang (max. $maxRange Tage)'};
-    }
+    final days = calendarDayDiff(range.start, range.end) + 1;
     if (groupBy == 'day' && days > maxDayRange) {
       return {
         'error':
@@ -295,8 +411,9 @@ class CoachTools {
   };
 
   Future<Map<String, dynamic>> _weightHistory(Map<String, dynamic> args) async {
-    final range = _range(args, defaultDays: 60);
-    if (range == null) return {'error': 'start_date liegt nach end_date'};
+    final parsed = _parseRange(args, defaultDays: 60);
+    if (parsed.range == null) return {'error': parsed.error};
+    final range = parsed.range!;
     onStatus?.call('Schaut sich deinen Gewichtsverlauf an …');
     final weights = await loadWeights(addDays(range.start, -6), range.end);
     final trend = NutritionStats.weightTrend(weights);
@@ -323,8 +440,9 @@ class CoachTools {
   Future<Map<String, dynamic>> _searchMeals(Map<String, dynamic> args) async {
     final query = (args['query'] as String? ?? '').trim().toLowerCase();
     if (query.isEmpty) return {'error': 'query fehlt'};
-    final range = _range(args, defaultDays: 365);
-    if (range == null) return {'error': 'start_date liegt nach end_date'};
+    final parsed = _parseRange(args, defaultDays: 365);
+    if (parsed.range == null) return {'error': parsed.error};
+    final range = parsed.range!;
     onStatus?.call('Sucht nach „${args['query']}“ …');
 
     final matches = (await loadFoods(
@@ -348,8 +466,9 @@ class CoachTools {
   }
 
   Future<Map<String, dynamic>> _topFoods(Map<String, dynamic> args) async {
-    final range = _range(args);
-    if (range == null) return {'error': 'start_date liegt nach end_date'};
+    final parsed = _parseRange(args);
+    if (parsed.range == null) return {'error': parsed.error};
+    final range = parsed.range!;
     final limit = ((args['limit'] as num?)?.toInt() ?? 10).clamp(1, 30);
     onStatus?.call('Sucht deine häufigsten Lebensmittel …');
 
@@ -393,6 +512,107 @@ class CoachTools {
       'kcal_gesamt': totalKcal,
       'meiste_kalorien': top((a, b) => b.kcal.compareTo(a.kcal)),
       'am_haeufigsten': top((a, b) => b.count.compareTo(a.count)),
+    };
+  }
+
+  Future<Map<String, dynamic>> _getUserPlan(Map<String, dynamic> args) async {
+    if (loadPlans == null) return {'error': 'Keine Pläne verfügbar.'};
+    onStatus?.call('Liest deinen Plan …');
+    final plans = await loadPlans!();
+    final active = plans.where((p) => p.isActive).toList();
+    final planId = (args['plan_id'] as String?)?.trim();
+    if (planId == null || planId.isEmpty) {
+      return {
+        'plaene': [
+          for (final p in active)
+            {
+              'id': p.id,
+              'typ': p.type.label,
+              'titel': p.title,
+              'laenge_zeichen': p.content.length,
+              'inhalt': p.content,
+            },
+        ],
+      };
+    }
+    final match = plans.where((p) => p.id == planId).firstOrNull;
+    if (match == null) return {'error': 'Plan "$planId" nicht gefunden.'};
+    return {
+      'id': match.id,
+      'typ': match.type.label,
+      'titel': match.title,
+      'inhalt': match.content,
+    };
+  }
+
+  Future<Map<String, dynamic>> _logFood(Map<String, dynamic> args) async {
+    if (onLogFood == null) return {'error': 'Schreibzugriff nicht verfügbar.'};
+    final name = (args['name'] as String?)?.trim() ?? '';
+    if (name.isEmpty) return {'error': 'name fehlt'};
+    final date = args['date'] == null ? today : _parseDate(args['date']);
+    if (date == null) return {'error': 'date ist ungültig'};
+    final calories = (args['calories'] as num?)?.round();
+    if (calories == null || calories < 0) return {'error': 'calories ungültig'};
+
+    onStatus?.call('Trägt „$name“ ein …');
+    final entry = FoodEntry(
+      name: name,
+      calories: calories,
+      protein: ((args['protein'] as num?)?.round() ?? 0).clamp(0, 10000),
+      carbs: ((args['carbs'] as num?)?.round() ?? 0).clamp(0, 10000),
+      fat: ((args['fat'] as num?)?.round() ?? 0).clamp(0, 10000),
+      date: date,
+      amount: (args['amount'] as num?)?.toDouble(),
+      unit: args['unit'] as String?,
+    );
+    await onLogFood!(entry);
+    return {'status': 'gespeichert', 'datum': dayKey(date), ..._food(entry)};
+  }
+
+  Future<Map<String, dynamic>> _logActivity(Map<String, dynamic> args) async {
+    if (onLogActivity == null) {
+      return {'error': 'Schreibzugriff nicht verfügbar.'};
+    }
+    final name = (args['name'] as String?)?.trim() ?? '';
+    if (name.isEmpty) return {'error': 'name fehlt'};
+    final date = args['date'] == null ? today : _parseDate(args['date']);
+    if (date == null) return {'error': 'date ist ungültig'};
+    final burned = (args['calories_burned'] as num?)?.round();
+    if (burned == null || burned <= 0) {
+      return {'error': 'calories_burned ungültig'};
+    }
+
+    onStatus?.call('Trägt Aktivität „$name“ ein …');
+    final entry = ActivityEntry(
+      name: name,
+      caloriesBurned: burned,
+      date: date,
+    );
+    await onLogActivity!(entry);
+    return {
+      'status': 'gespeichert',
+      'datum': dayKey(date),
+      'name': entry.name,
+      'kcal': entry.caloriesBurned,
+    };
+  }
+
+  Future<Map<String, dynamic>> _logWeight(Map<String, dynamic> args) async {
+    if (onLogWeight == null) return {'error': 'Schreibzugriff nicht verfügbar.'};
+    final date = args['date'] == null ? today : _parseDate(args['date']);
+    if (date == null) return {'error': 'date ist ungültig'};
+    final weight = (args['weight_kg'] as num?)?.toDouble();
+    if (weight == null || weight < 20 || weight > 400) {
+      return {'error': 'weight_kg ungültig'};
+    }
+
+    onStatus?.call('Speichert Gewicht …');
+    final entry = WeightEntry(date: date, weightKg: weight);
+    await onLogWeight!(entry);
+    return {
+      'status': 'gespeichert',
+      'datum': dayKey(date),
+      'gewicht_kg': entry.weightKg,
     };
   }
 

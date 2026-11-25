@@ -1,17 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+const List<BarcodeFormat> retailBarcodeFormats = [
+  BarcodeFormat.ean13,
+  BarcodeFormat.ean8,
+  BarcodeFormat.upcA,
+  BarcodeFormat.upcE,
+  BarcodeFormat.code128,
+  BarcodeFormat.code39,
+  BarcodeFormat.itf,
+];
+
 class BarcodeScannerScreen extends StatefulWidget {
   final Function(String barcode) onBarcodeScanned;
+  final VoidCallback? onTakePhoto;
+  final VoidCallback? onPickGallery;
 
-  const BarcodeScannerScreen({super.key, required this.onBarcodeScanned});
+  const BarcodeScannerScreen({
+    super.key,
+    required this.onBarcodeScanned,
+    this.onTakePhoto,
+    this.onPickGallery,
+  });
 
   @override
   State<BarcodeScannerScreen> createState() => _BarcodeScannerScreenState();
 }
 
 class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
-  final MobileScannerController _controller = MobileScannerController();
+  final MobileScannerController _controller = MobileScannerController(
+    formats: retailBarcodeFormats,
+  );
   bool _hasScanned = false;
 
   @override
@@ -21,38 +40,31 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
   }
 
   void _onBarcodeDetected(BarcodeCapture capture) {
-    // DEBUG: Log every detection callback
-    print(
-      'DEBUG: _onBarcodeDetected called, barcodes count: ${capture.barcodes.length}',
-    );
+    if (_hasScanned) return;
+    final raw = capture.barcodes.firstOrNull?.rawValue;
+    if (raw == null || raw.trim().isEmpty) return;
+    _hasScanned = true;
+    widget.onBarcodeScanned(raw.trim());
+  }
 
-    if (_hasScanned) {
-      print('DEBUG: Already scanned, ignoring');
-      return;
-    }
-
-    final barcode = capture.barcodes.firstOrNull;
-    print(
-      'DEBUG: First barcode: ${barcode?.rawValue}, format: ${barcode?.format}',
-    );
-
-    if (barcode?.rawValue != null) {
-      print('DEBUG: Valid barcode detected: ${barcode!.rawValue}');
-      _hasScanned = true;
-      widget.onBarcodeScanned(barcode.rawValue!);
-      // Note: Caller is responsible for navigation via the callback
-    } else {
-      print('DEBUG: Barcode rawValue is null');
-    }
+  Future<void> _switchToPhoto(VoidCallback action) async {
+    await _controller.stop();
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    action();
   }
 
   @override
   Widget build(BuildContext context) {
+    final hasPhotoActions =
+        widget.onTakePhoto != null || widget.onPickGallery != null;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Barcode scannen'),
+        title: Text(hasPhotoActions ? 'Kamera & Barcode' : 'Barcode scannen'),
         actions: [
           IconButton(
+            tooltip: 'Blitz',
             icon: ValueListenableBuilder(
               valueListenable: _controller,
               builder: (context, state, child) {
@@ -66,51 +78,126 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
             onPressed: () => _controller.toggleTorch(),
           ),
           IconButton(
+            tooltip: 'Kamera wechseln',
             icon: const Icon(Icons.cameraswitch),
             onPressed: () => _controller.switchCamera(),
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          MobileScanner(controller: _controller, onDetect: _onBarcodeDetected),
-          // Scan overlay
-          Center(
-            child: Container(
-              width: 280,
-              height: 280,
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.primary,
-                  width: 3,
-                ),
-                borderRadius: BorderRadius.circular(16),
-              ),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final scanSize = (constraints.biggest.shortestSide * 0.7).clamp(
+            180.0,
+            280.0,
+          );
+          final scanWindow = Rect.fromCenter(
+            center: Offset(
+              constraints.maxWidth / 2,
+              constraints.maxHeight / 2 - (hasPhotoActions ? 36 : 0),
             ),
-          ),
-          // Instructions
-          Positioned(
-            bottom: 50,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Richte die Kamera auf den Barcode',
-                  style: TextStyle(color: Colors.white),
+            width: scanSize,
+            height: scanSize,
+          );
+
+          return Stack(
+            children: [
+              MobileScanner(
+                controller: _controller,
+                scanWindow: scanWindow,
+                onDetect: _onBarcodeDetected,
+                errorBuilder: (context, error, _) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.videocam_off_outlined,
+                            size: 48,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            error.errorCode ==
+                                    MobileScannerErrorCode.permissionDenied
+                                ? 'Kamera-Berechtigung wurde verweigert. Bitte in den App-Einstellungen erlauben.'
+                                : 'Kamera konnte nicht gestartet werden (${error.errorCode.name}).',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              Positioned.fromRect(
+                rect: scanWindow,
+                child: Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 3,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
               ),
-            ),
-          ),
-        ],
+              Positioned(
+                bottom: hasPhotoActions ? 28 : 48,
+                left: 16,
+                right: 16,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        hasPhotoActions
+                            ? 'Barcode wird automatisch erkannt – sonst Foto aufnehmen'
+                            : 'Richte die Kamera auf den Barcode',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    if (hasPhotoActions) ...[
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (widget.onPickGallery != null)
+                            FilledButton.tonalIcon(
+                              onPressed: () =>
+                                  _switchToPhoto(widget.onPickGallery!),
+                              icon: const Icon(Icons.photo_library),
+                              label: const Text('Galerie'),
+                            ),
+                          if (widget.onPickGallery != null &&
+                              widget.onTakePhoto != null)
+                            const SizedBox(width: 12),
+                          if (widget.onTakePhoto != null)
+                            FilledButton.icon(
+                              onPressed: () =>
+                                  _switchToPhoto(widget.onTakePhoto!),
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Foto aufnehmen'),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
