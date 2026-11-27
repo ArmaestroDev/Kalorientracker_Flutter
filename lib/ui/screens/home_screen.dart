@@ -266,6 +266,10 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) => UnifiedInputDialog(
         initialVoiceMode: initialVoiceMode,
         missingApiKeyMessage: provider.missingApiKeyMessage,
+        initialName: provider.entryDraftName,
+        initialDescription: provider.entryDraftDescription,
+        onDraftChanged: provider.saveEntryDraft,
+        onClear: () => provider.saveEntryDraft('', ''),
         onSubmit: (name, description) {
           provider.addUnifiedEntry(name, description);
         },

@@ -94,8 +94,8 @@ class ApiServiceRepository {
     return info;
   }
 
-  /// Classify user input as food or activity and return appropriate data
-  Future<UnifiedEntry> classifyAndProcess(
+  /// Classifies user input into every mentioned food and activity
+  Future<List<UnifiedEntry>> classifyAndProcessAll(
     String input,
     String description,
     double? bodyWeightKg,
@@ -105,32 +105,45 @@ class ApiServiceRepository {
         system: _classificationSystemPrompt(bodyWeightKg),
         prompt: 'Eingabe: "$input"\nBeschreibung: "$description"',
         jsonOutput: true,
-        maxTokens: 2000,
+        maxTokens: 8192,
       ),
     );
 
-    final type = json['type'] as String?;
-    if (type == 'activity') {
-      final info = ActivityInfo.fromJson(json);
-      if (info.caloriesBurned <= 0) {
-        throw AiException(
-          'Für "$input" konnte kein Verbrauch geschätzt werden.',
-        );
-      }
-      return UnifiedEntry(isFood: false, activityInfo: info);
+    final rawItems = json['items'];
+    final List<dynamic> elements;
+    if (rawItems is List) {
+      elements = rawItems;
+    } else if (json.containsKey('type')) {
+      elements = [json];
+    } else {
+      elements = const [];
     }
-    if (type == 'food') {
-      final info = FoodNutritionInfo.fromJson(json);
-      if (info.calories <= 0) {
-        throw AiException(
-          'Für "$input" konnten keine Nährwerte geschätzt werden.',
-        );
+
+    final entries = <UnifiedEntry>[];
+    for (final element in elements) {
+      if (element is! Map) continue;
+      final item = Map<String, dynamic>.from(element);
+      final type = item['type'];
+      if (type == 'food') {
+        final info = FoodNutritionInfo.fromJson(item);
+        if (info.calories > 0) {
+          entries.add(UnifiedEntry(isFood: true, foodInfo: info));
+        }
+      } else if (type == 'activity') {
+        final info = ActivityInfo.fromJson(item);
+        if (info.caloriesBurned > 0) {
+          entries.add(UnifiedEntry(isFood: false, activityInfo: info));
+        }
       }
-      return UnifiedEntry(isFood: true, foodInfo: info);
     }
-    throw AiException(
-      '"$input" wurde weder als Mahlzeit noch als Aktivität erkannt.',
-    );
+
+    if (entries.isEmpty) {
+      final label = input.length > 60 ? '${input.substring(0, 60)}…' : input;
+      throw AiException(
+        '"$label" wurde weder als Mahlzeit noch als Aktivität erkannt.',
+      );
+    }
+    return entries;
   }
 
   Future<FoodNutritionInfo> estimateFoodFromImage(
@@ -197,17 +210,29 @@ class ApiServiceRepository {
   Future<Map<String, dynamic>> _requestJson(AiRequest request) async {
     final response = await _service.generate(request);
     final json = extractJsonObject(response);
-    if (json == null) {
-      throw AiException(
-        '${_service.providerName} hat keine lesbaren Daten geliefert. Bitte erneut versuchen.',
-      );
-    }
-    return json;
+    if (json != null) return json;
+    final retry = await _service.generate(request);
+    final retried = extractJsonObject(retry);
+    if (retried != null) return retried;
+    throw AiException(
+      '${_service.providerName} hat keine lesbaren Daten geliefert. Bitte erneut versuchen oder die Eingabe kürzer fassen.',
+    );
   }
 
   /// Finds the JSON object in a model response, tolerating code fences or
   /// text around it
   static Map<String, dynamic>? extractJsonObject(String response) {
+    final text = _stripFences(response);
+    if (text.startsWith('[')) {
+      final arrayEnd = text.lastIndexOf(']');
+      if (arrayEnd <= 0) return null;
+      try {
+        final decoded = jsonDecode(text.substring(0, arrayEnd + 1));
+        return decoded is List ? {'items': decoded} : null;
+      } catch (_) {
+        return null;
+      }
+    }
     final start = response.indexOf('{');
     final end = response.lastIndexOf('}');
     if (start < 0 || end <= start) return null;
@@ -217,6 +242,19 @@ class ApiServiceRepository {
     } catch (_) {
       return null;
     }
+  }
+
+  static String _stripFences(String value) {
+    var text = value.trim();
+    if (text.startsWith('```')) {
+      text = text.substring(3);
+      final newline = text.indexOf('\n');
+      if (newline >= 0) text = text.substring(newline + 1);
+    }
+    if (text.endsWith('```')) {
+      text = text.substring(0, text.length - 3);
+    }
+    return text.trim();
   }
 
   static const _foodJsonShape = '''
@@ -265,19 +303,27 @@ JSON-Format:
   static String _classificationSystemPrompt(double? bodyWeightKg) =>
       '''
 Du bist der Assistent einer deutschen Kalorien-Tracker-App.
-Entscheide, ob die Eingabe eine Mahlzeit/ein Getränk (type "food") oder eine körperliche Aktivität (type "activity") beschreibt, und liefere die passenden Daten.
+Die Eingabe kann MEHRERE Lebensmittel, Getränke und/oder Aktivitäten enthalten.
+Erzeuge für JEDES einzelne genannte Lebensmittel, Getränk und jede Aktivität genau ein Element in "items". Fasse verschiedene Lebensmittel niemals zu einem Element zusammen und lasse keines weg.
+Beispiel: "200 g Reis, 150 g Hähnchen und ein Apfel" ergibt 3 food-Elemente (Reis 200 g, Hähnchen 150 g, Apfel 1 Stk).
+Verwende für jedes Element genau die Menge, die der Nutzer für dieses Element genannt hat (z. B. "200 g Reis" → amount 200, unit "g"). Ist für ein Element keine Menge genannt, nimm eine übliche Portion an.
+Eine einzelne Speise, die der Nutzer als ein Ding benennt (z. B. "Döner", "Spaghetti Bolognese 400 g"), bleibt EIN Element.
+Eine optionale "Beschreibung" gilt als Kontext für die gesamte Eingabe (z. B. Ort, Zubereitung).
 
 Für type "food" gelten diese Regeln:
 Schätze die Nährwerte realistisch anhand typischer deutscher Produkte und Portionsgrößen.
-Wenn keine Menge angegeben ist, nimm eine übliche Portion an und gib sie in "amount"/"unit" an.
 Die *_100g-Felder beziehen sich auf 100 g bzw. 100 ml.
-JSON-Format: {"type": "food", ...} mit diesen Feldern:
+Felder eines food-Elements:
 $_foodJsonShape
 
 Für type "activity" gelten diese Regeln:
 Schätze nur den Verbrauch ÜBER dem Ruheumsatz (netto). ${_weightHint(bodyWeightKg)}
 Wenn keine Dauer angegeben ist, nimm 60 Minuten an und nenne sie im Namen.
-JSON-Format: {"type": "activity", "name": "string inkl. Dauer", "calories_burned": integer}
+Felder eines activity-Elements: {"type": "activity", "name": "string inkl. Dauer", "calories_burned": integer}
 
-Alle Texte auf Deutsch.''';
+Alle Texte auf Deutsch. Halte Zahlen kurz (max. 1 Nachkommastelle).
+Antworte NUR mit dem JSON-Objekt, ohne Text drumherum.
+
+JSON-Format:
+{"items": [{"type": "food", ...Felder wie oben...}, {"type": "activity", "name": "...", "calories_burned": integer}]}''';
 }

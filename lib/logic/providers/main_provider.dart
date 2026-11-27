@@ -81,6 +81,8 @@ class MainProvider extends ChangeNotifier {
   String? _assistantStatus;
   int _dataVersion = 0;
   int _dateLoadToken = 0;
+  String _entryDraftName = '';
+  String _entryDraftDescription = '';
 
   // Getters
   DateTime get selectedDate => _selectedDate;
@@ -104,6 +106,13 @@ class MainProvider extends ChangeNotifier {
   String? modelErrorFor(AiProvider provider) => _modelErrors[provider];
   String? get successMessage => _successMessage;
   String? get loadingLabel => _loadingLabel;
+  String get entryDraftName => _entryDraftName;
+  String get entryDraftDescription => _entryDraftDescription;
+
+  void saveEntryDraft(String name, String description) {
+    _entryDraftName = name;
+    _entryDraftDescription = description;
+  }
 
   List<AiModelOption> modelsFor(AiProvider provider) {
     final cached = _modelCatalog[provider];
@@ -269,6 +278,7 @@ class MainProvider extends ChangeNotifier {
     Future<void> Function(DateTime targetDate) task, {
     String label = 'KI schätzt Nährwerte…',
     String? success,
+    String? Function()? successBuilder,
   }) async {
     if (_isApiKeyMissing()) return false;
     final targetDate = _selectedDate;
@@ -281,7 +291,8 @@ class MainProvider extends ChangeNotifier {
       await task(targetDate);
       await _loadEntriesForDate(_selectedDate);
       await _syncHomeWidget();
-      if (success != null) _successMessage = success;
+      final message = successBuilder != null ? successBuilder() : success;
+      if (message != null) _successMessage = message;
       ok = true;
     } catch (e) {
       _errorMessage = _errorText(e);
@@ -649,26 +660,35 @@ class MainProvider extends ChangeNotifier {
   }
 
   /// Add unified entry - AI classifies as food or activity automatically
-  Future<bool> addUnifiedEntry(String input, String description) {
-    return _runAiTask(
+  Future<bool> addUnifiedEntry(String input, String description) async {
+    saveEntryDraft(input, description);
+    var count = 0;
+    final ok = await _runAiTask(
       (targetDate) async {
-        final entry = await _apiServiceRepository.classifyAndProcess(
+        final entries = await _apiServiceRepository.classifyAndProcessAll(
           input,
           description,
           _bodyWeightForEstimates,
         );
-        if (entry.isFood) {
-          await _addFoodEntryFromInfo(entry.foodInfo!, date: targetDate);
-        } else {
-          await _addActivityEntryFromInfo(
-            entry.activityInfo!,
-            date: targetDate,
-          );
+        for (final entry in entries) {
+          if (entry.isFood) {
+            await _addFoodEntryFromInfo(entry.foodInfo!, date: targetDate);
+          } else {
+            await _addActivityEntryFromInfo(
+              entry.activityInfo!,
+              date: targetDate,
+            );
+          }
+          count++;
         }
       },
       label: 'KI analysiert Eintrag…',
-      success: 'Eintrag hinzugefügt',
+      successBuilder: () => count == 1
+          ? 'Eintrag hinzugefügt'
+          : '$count Einträge hinzugefügt',
     );
+    if (ok) saveEntryDraft('', '');
+    return ok;
   }
 
   /// Add food from image using AI estimation
