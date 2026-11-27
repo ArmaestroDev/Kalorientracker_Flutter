@@ -39,6 +39,19 @@ class ApiServiceRepository {
     return service;
   }
 
+  Future<void> ping() async {
+    final text = await _service.generate(
+      AiRequest.single(
+        system: 'Antworte nur mit OK.',
+        prompt: 'Test',
+        maxTokens: 256,
+      ),
+    );
+    if (text.trim().isEmpty) {
+      throw const AiException('Leere Antwort vom Modell.');
+    }
+  }
+
   Future<FoodNutritionInfo> fetchFoodNutrition(
     String foodName,
     String description,

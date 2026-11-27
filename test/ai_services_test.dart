@@ -157,6 +157,110 @@ void main() {
       ]);
     });
 
+    test('2.5 Flash turns thinking off for JSON requests', () async {
+      late Map<String, dynamic> body;
+      final service = GeminiApiService(
+        'k',
+        'gemini-2.5-flash',
+        client: MockClient((request) async {
+          body = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({
+              'candidates': [
+                {
+                  'content': {
+                    'parts': [
+                      {'text': '{}'},
+                    ],
+                  },
+                  'finishReason': 'STOP',
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      expect(
+        await service.generate(
+          AiRequest.single(system: 's', prompt: 'p', jsonOutput: true),
+        ),
+        '{}',
+      );
+      final config =
+          (body['generationConfig'] as Map<String, dynamic>)['thinkingConfig']
+              as Map<String, dynamic>;
+      expect(config['thinkingBudget'], 0);
+      expect(config.containsKey('thinkingLevel'), isFalse);
+    });
+
+    test('2.5 Flash turns thinking off for a small token budget', () async {
+      late Map<String, dynamic> body;
+      final service = GeminiApiService(
+        'k',
+        'gemini-2.5-flash',
+        client: MockClient((request) async {
+          body = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({
+              'candidates': [
+                {
+                  'content': {
+                    'parts': [
+                      {'text': 'OK'},
+                    ],
+                  },
+                  'finishReason': 'STOP',
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      expect(
+        await service.generate(
+          AiRequest.single(system: 's', prompt: 'p', maxTokens: 256),
+        ),
+        'OK',
+      );
+      final config =
+          (body['generationConfig'] as Map<String, dynamic>)['thinkingConfig']
+              as Map<String, dynamic>;
+      expect(config['thinkingBudget'], 0);
+    });
+
+    test('2.0 Flash sends no thinkingConfig', () async {
+      late Map<String, dynamic> body;
+      final service = GeminiApiService(
+        'k',
+        'gemini-2.0-flash',
+        client: MockClient((request) async {
+          body = jsonDecode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            jsonEncode({
+              'candidates': [
+                {
+                  'content': {
+                    'parts': [
+                      {'text': '{}'},
+                    ],
+                  },
+                  'finishReason': 'STOP',
+                },
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      await service.generate(
+        AiRequest.single(system: 's', prompt: 'p', jsonOutput: true),
+      );
+      final config = body['generationConfig'] as Map<String, dynamic>;
+      expect(config.containsKey('thinkingConfig'), isFalse);
+    });
+
     test('404 names the model', () async {
       final service = GeminiApiService(
         'k',

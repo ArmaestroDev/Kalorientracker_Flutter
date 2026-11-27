@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+
 import '../../data/models/calorie_goals.dart';
 import '../../logic/nutrition_stats.dart';
 import '../theme/app_theme.dart';
+import '../theme/tokens.dart';
+import 'kit/kit.dart';
 
 final _thousands = NumberFormat.decimalPattern('de_DE');
 
@@ -39,20 +42,17 @@ class GoalsSummaryCard extends StatelessWidget {
     final appColors = AppColors.of(context);
 
     if (goals.calories <= 0) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(Icons.person_outline, color: colorScheme.primary),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Trage im Profil Alter, Gewicht und Größe ein, um deine Ziele zu berechnen.',
-                ),
+      return AppCard(
+        child: Row(
+          children: [
+            Icon(Icons.person_outline, color: colorScheme.onSurfaceVariant),
+            const SizedBox(width: Space.md),
+            const Expanded(
+              child: Text(
+                'Trage im Profil Alter, Gewicht und Größe ein, um deine Ziele zu berechnen.',
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }
@@ -60,151 +60,168 @@ class GoalsSummaryCard extends StatelessWidget {
     final remaining = calorieBudget - eatenCalories;
     final isOver = remaining < 0;
     final progressColor = isOver ? appColors.danger : colorScheme.primary;
+    final progress = calorieBudget > 0
+        ? (eatenCalories / calorieBudget).clamp(0.0, 1.0)
+        : 0.0;
+    final weekRemaining = week.remaining;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 120,
+                height: 120,
+                child: Stack(
+                  alignment: Alignment.center,
                   children: [
-                    Text(
-                      isOver ? 'Über dem Tagesziel' : 'Heute noch übrig',
-                      style: textTheme.labelLarge?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                    Positioned.fill(
+                      child: CircularProgressIndicator(
+                        value: progress,
+                        strokeWidth: 10,
+                        strokeCap: StrokeCap.round,
+                        color: progressColor,
                       ),
                     ),
-                    Text(
-                      '${_thousands.format(remaining.abs())} kcal',
-                      style: textTheme.headlineMedium?.copyWith(
-                        color: isOver
-                            ? appColors.danger
-                            : colorScheme.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          isOver
+                              ? '+${_thousands.format(remaining.abs())}'
+                              : _thousands.format(remaining),
+                          style: textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: isOver ? appColors.danger : colorScheme.onSurface,
+                          ),
+                        ),
+                        Text(
+                          isOver ? 'zu viel' : 'übrig',
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                Text(
-                  '${_thousands.format(eatenCalories)} / ${_thousands.format(calorieBudget)} kcal',
-                  style: textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: LinearProgressIndicator(
-                value: calorieBudget > 0
-                    ? (eatenCalories / calorieBudget).clamp(0.0, 1.0)
-                    : 0,
-                minHeight: 10,
-                color: progressColor,
-                backgroundColor: colorScheme.surfaceContainerHighest,
               ),
-            ),
-            if (burnedCalories > 0) ...[
-              const SizedBox(height: 6),
-              Text(
-                activityAddedToBudget
-                    ? 'inkl. +$burnedCalories kcal aus Aktivitäten'
-                    : '$burnedCalories kcal Aktivität (bereits im Aktivitätslevel enthalten)',
-                style: textTheme.labelSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
+              const SizedBox(width: Space.lg),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SummaryLine(
+                      label: 'Gegessen',
+                      value: '${_thousands.format(eatenCalories)} kcal',
+                    ),
+                    const SizedBox(height: Space.sm),
+                    _SummaryLine(
+                      label: 'Budget',
+                      value: '${_thousands.format(calorieBudget)} kcal',
+                    ),
+                    const SizedBox(height: Space.sm),
+                    _SummaryLine(
+                      label: 'Verbrannt',
+                      value: activityAddedToBudget
+                          ? '${_thousands.format(burnedCalories)} kcal'
+                          : '${_thousands.format(burnedCalories)} kcal (im Budget)',
+                    ),
+                  ],
                 ),
               ),
             ],
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: MacroProgress(
-                    name: 'Protein',
-                    current: totalProtein,
-                    goal: goals.proteinGrams,
-                    color: appColors.protein,
-                    isMinimum: true,
-                  ),
+          ),
+          const SizedBox(height: Space.lg),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: MacroProgress(
+                  name: 'Protein',
+                  current: totalProtein,
+                  goal: goals.proteinGrams,
+                  color: appColors.protein,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: MacroProgress(
-                    name: 'Kohlenh.',
-                    current: totalCarbs,
-                    goal: goals.carbsGrams,
-                    color: appColors.carbs,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: MacroProgress(
-                    name: 'Fett',
-                    current: totalFat,
-                    goal: goals.fatGrams,
-                    color: appColors.fat,
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 28),
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: onOpenHistory,
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.calendar_view_week,
-                    size: 20,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Diese Woche ${_thousands.format(week.consumed)} / ${_thousands.format(week.budget)} kcal',
-                          style: textTheme.bodyMedium,
-                        ),
-                        Text(
-                          week.remaining >= 0
-                              ? 'Noch ${_thousands.format(week.remaining)} kcal · ≈ ${_thousands.format(week.perRemainingDay)} pro Tag'
-                              : 'Wochenbudget um ${_thousands.format(-week.remaining)} kcal überschritten',
-                          style: textTheme.bodySmall?.copyWith(
-                            color: week.remaining >= 0
-                                ? colorScheme.onSurfaceVariant
-                                : appColors.danger,
-                          ),
-                        ),
-                        if (week.unloggedPastDays > 0)
-                          Text(
-                            '${week.unloggedPastDays} ${week.unloggedPastDays == 1 ? 'Tag' : 'Tage'} ohne Einträge (nicht im Budget)',
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (onOpenHistory != null)
-                    Icon(
-                      Icons.chevron_right,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                ],
               ),
-            ),
-          ],
-        ),
+              const SizedBox(width: Space.md),
+              Expanded(
+                child: MacroProgress(
+                  name: 'Kohlenhydrate',
+                  current: totalCarbs,
+                  goal: goals.carbsGrams,
+                  color: appColors.carbs,
+                ),
+              ),
+              const SizedBox(width: Space.md),
+              Expanded(
+                child: MacroProgress(
+                  name: 'Fett',
+                  current: totalFat,
+                  goal: goals.fatGrams,
+                  color: appColors.fat,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Space.md),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  weekRemaining >= 0
+                      ? 'Woche: ${_thousands.format(weekRemaining)} kcal übrig'
+                      : 'Woche: ${_thousands.format(-weekRemaining)} kcal zu viel',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: weekRemaining >= 0
+                        ? colorScheme.onSurfaceVariant
+                        : appColors.danger,
+                  ),
+                ),
+              ),
+              if (onOpenHistory != null)
+                TextButton(
+                  onPressed: onOpenHistory,
+                  child: const Text('Verlauf'),
+                ),
+            ],
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _SummaryLine extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _SummaryLine({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Row(
+      children: [
+        Text(
+          label,
+          style: textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: Space.sm),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: textTheme.titleSmall,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -214,7 +231,6 @@ class MacroProgress extends StatelessWidget {
   final int current;
   final int goal;
   final Color color;
-  final bool isMinimum;
 
   const MacroProgress({
     super.key,
@@ -222,7 +238,6 @@ class MacroProgress extends StatelessWidget {
     required this.current,
     required this.goal,
     required this.color,
-    this.isMinimum = false,
   });
 
   @override
@@ -230,46 +245,28 @@ class MacroProgress extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final progress = goal > 0 ? (current / goal).clamp(0.0, 1.0) : 0.0;
-    final reached = isMinimum && goal > 0 && current >= goal;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                name,
-                style: textTheme.bodySmall,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (reached) ...[
-              const SizedBox(width: 4),
-              Icon(Icons.check_circle, size: 14, color: colorScheme.onSurface),
-            ],
-          ],
-        ),
-        const SizedBox(height: 6),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: LinearProgressIndicator(
-            value: progress,
-            minHeight: 6,
-            backgroundColor: color.withValues(alpha: 0.18),
-            valueColor: AlwaysStoppedAnimation<Color>(color),
+        Text(
+          name,
+          style: textTheme.labelMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
           ),
+          overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: Space.xs),
+        LinearProgressIndicator(
+          value: progress,
+          minHeight: 6,
+          borderRadius: BorderRadius.circular(Corner.full),
+          color: color,
+        ),
+        const SizedBox(height: Space.xs),
         Text(
           '$current / $goal g',
-          style: textTheme.labelSmall?.copyWith(
+          style: textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
         ),

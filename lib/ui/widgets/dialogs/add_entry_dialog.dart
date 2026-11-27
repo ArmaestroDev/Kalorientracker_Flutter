@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Dialog for selecting input type: Photo, History, or Manual text
+import '../../theme/tokens.dart';
+
 class AddEntryDialog extends StatelessWidget {
   final VoidCallback onPhotoSelected;
   final VoidCallback onManualSelected;
@@ -17,53 +18,38 @@ class AddEntryDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Eintrag hinzufügen'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Wie möchtest du den Eintrag hinzufügen?'),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: _InputTypeButton(
-                    icon: Icons.camera_alt,
-                    label: 'Foto',
-                    subtitle: 'Barcode / Bild',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onPhotoSelected();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _InputTypeButton(
-                    icon: Icons.history,
-                    label: 'Verlauf',
-                    subtitle: 'Datenbank',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onHistorySelected();
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _InputTypeButton(
-                    icon: Icons.edit,
-                    label: 'Manuell',
-                    subtitle: 'Texteingabe',
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onManualSelected();
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+      contentPadding: const EdgeInsets.fromLTRB(Space.sm, Space.lg, Space.sm, 0),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _EntryChoiceTile(
+            icon: Icons.edit_note_rounded,
+            title: 'Beschreiben',
+            subtitle: 'Text oder Sprache – KI schätzt die Werte',
+            onTap: () {
+              Navigator.of(context).pop();
+              onManualSelected();
+            },
+          ),
+          _EntryChoiceTile(
+            icon: Icons.photo_camera_outlined,
+            title: 'Foto',
+            subtitle: 'Mahlzeit fotografieren',
+            onTap: () {
+              Navigator.of(context).pop();
+              onPhotoSelected();
+            },
+          ),
+          _EntryChoiceTile(
+            icon: Icons.history_rounded,
+            title: 'Zuletzt gegessen',
+            subtitle: 'Aus deinem Verlauf',
+            onTap: () {
+              Navigator.of(context).pop();
+              onHistorySelected();
+            },
+          ),
+        ],
       ),
       actions: [
         TextButton(
@@ -75,54 +61,36 @@ class AddEntryDialog extends StatelessWidget {
   }
 }
 
-class _InputTypeButton extends StatelessWidget {
+class _EntryChoiceTile extends StatelessWidget {
   final IconData icon;
-  final String label;
+  final String title;
   final String subtitle;
   final VoidCallback onTap;
 
-  const _InputTypeButton({
+  const _EntryChoiceTile({
     required this.icon,
-    required this.label,
+    required this.title,
     required this.subtitle,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: Space.sm),
+      leading: Container(
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
-          border: Border.all(color: Theme.of(context).colorScheme.outline),
-          borderRadius: BorderRadius.circular(12),
+          color: scheme.secondaryContainer,
+          shape: BoxShape.circle,
         ),
-        child: Column(
-          children: [
-            Icon(icon, size: 32, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+        child: Icon(icon, size: 22, color: scheme.onSecondaryContainer),
       ),
+      title: Text(title),
+      subtitle: Text(subtitle),
     );
   }
 }

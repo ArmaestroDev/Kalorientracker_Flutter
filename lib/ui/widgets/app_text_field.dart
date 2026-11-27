@@ -140,8 +140,8 @@ class _AppTextFieldState extends State<AppTextField> {
           helperMaxLines: 3,
           suffixText: w.suffix,
           errorText: w.errorText,
-          filled: w.filled,
-          border: w.border ?? const OutlineInputBorder(),
+          filled: w.filled ? true : null,
+          border: w.border,
         ),
       ),
     );

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../../../data/models/food_entry.dart';
 import '../../../logic/number_format.dart';
+import '../../theme/tokens.dart';
 import '../app_text_field.dart';
 
 class EditFoodDialog extends StatefulWidget {
@@ -27,7 +29,6 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
   late final TextEditingController _carbsController;
   late final TextEditingController _fatController;
 
-  /// Values per unit of amount, used to rescale when the amount changes
   late double _baseAmount;
   late List<double> _baseValues;
   double _portionMultiplier = 1.0;
@@ -196,8 +197,8 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
                 if (_submitted) setState(() {});
               },
             ),
-            const SizedBox(height: 12),
-            if (_hasAmount) ...[
+            const SizedBox(height: Space.md),
+            if (_hasAmount)
               AppTextField.number(
                 controller: _amountController,
                 label: 'Menge',
@@ -210,13 +211,12 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
                     ? 'Ungültige Zahl'
                     : null,
                 onChanged: _onAmountChanged,
-              ),
-              const SizedBox(height: 12),
-            ] else ...[
+              )
+            else ...[
               Text('Portion anpassen', style: textTheme.labelLarge),
-              const SizedBox(height: 4),
+              const SizedBox(height: Space.sm),
               Wrap(
-                spacing: 8,
+                spacing: Space.sm,
                 children: [
                   for (final factor in const [0.5, 0.75, 1.5, 2.0])
                     ActionChip(
@@ -227,8 +227,8 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
                     ),
                 ],
               ),
-              const SizedBox(height: 12),
             ],
+            const SizedBox(height: Space.md),
             AppTextField.number(
               controller: _caloriesController,
               label: 'Kalorien',
@@ -236,7 +236,7 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
               errorText: _errorFor(_caloriesController, required: true),
               onChanged: _onValueEdited,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Space.md),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -249,7 +249,7 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
                     onChanged: _onValueEdited,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Space.sm),
                 Expanded(
                   child: AppTextField.number(
                     controller: _carbsController,
@@ -259,7 +259,7 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
                     onChanged: _onValueEdited,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Space.sm),
                 Expanded(
                   child: AppTextField.number(
                     controller: _fatController,
@@ -271,16 +271,18 @@ class _EditFoodDialogState extends State<EditFoodDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: Space.lg),
             OutlinedButton.icon(
               onPressed: _recalculate,
-              icon: const Icon(Icons.auto_awesome, size: 18),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 20),
               label: const Text('Mit KI neu schätzen'),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: Space.sm),
             Text(
               'Nutzt den Namen und die Menge von oben.',
-              style: textTheme.bodySmall,
+              style: textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

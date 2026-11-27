@@ -2,15 +2,24 @@
 library;
 
 enum AiProvider {
-  gemini('Gemini', 'gemini-3.8-flash'),
-  claude('Claude', 'claude-opus-5'),
-  openai('OpenAI', 'gpt-5.4-mini'),
-  grok('Grok', 'grok-4.6');
+  gemini('Gemini', 'gemini-2.5-flash'),
+  claude('Claude', 'claude-sonnet-5-5'),
+  openai('OpenAI', 'gpt-5-mini'),
+  grok('Grok', 'grok-4');
 
   final String label;
   final String defaultModel;
 
   const AiProvider(this.label, this.defaultModel);
+
+  bool get requiresPaidKey => this != AiProvider.gemini;
+
+  String get keyHint => switch (this) {
+    AiProvider.gemini => 'Kostenloser Schlüssel: aistudio.google.com/apikey',
+    AiProvider.claude => 'Kostenpflichtig: console.anthropic.com',
+    AiProvider.openai => 'Kostenpflichtig: platform.openai.com/api-keys',
+    AiProvider.grok => 'Kostenpflichtig: console.x.ai',
+  };
 }
 
 enum Gender { male, female }

@@ -12,6 +12,7 @@ class DeleteConfirmationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: const Text('Löschen bestätigen'),
       content: Text('Möchtest du "$itemName" wirklich löschen?'),
@@ -22,7 +23,8 @@ class DeleteConfirmationDialog extends StatelessWidget {
         ),
         FilledButton(
           style: FilledButton.styleFrom(
-            backgroundColor: Theme.of(context).colorScheme.error,
+            backgroundColor: scheme.error,
+            foregroundColor: scheme.onError,
           ),
           onPressed: () {
             onConfirm();

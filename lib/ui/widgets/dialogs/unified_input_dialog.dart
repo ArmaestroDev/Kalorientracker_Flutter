@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../logic/voice_input_service.dart';
-import '../app_text_field.dart';
 
-/// Unified dialog for entering meals or activities via text or voice.
-/// AI will classify whether the input is a food or activity.
+import '../../../logic/voice_input_service.dart';
+import '../../theme/tokens.dart';
+import '../app_text_field.dart';
+import '../kit/kit.dart';
+
 class UnifiedInputDialog extends StatefulWidget {
   final void Function(String name, String description) onSubmit;
   final bool initialVoiceMode;
@@ -25,7 +26,7 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
   final _descriptionController = TextEditingController();
   final _voiceService = VoiceInputService();
   bool _isListening = false;
-  String? _voiceError;
+  String? _nameError;
   String _voiceBaseText = '';
 
   @override
@@ -53,7 +54,6 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
       return;
     }
 
-    setState(() => _voiceError = null);
     _voiceBaseText = _nameController.text.trim();
     await _voiceService.startListening(
       onListeningChanged: (active) {
@@ -68,18 +68,24 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
           text: combined,
           selection: TextSelection.collapsed(offset: combined.length),
         );
+        if (_nameError != null) setState(() => _nameError = null);
       },
       onError: (msg) {
-        if (mounted) setState(() => _voiceError = msg);
+        if (!mounted) return;
+        setState(() => _isListening = false);
+        AppFeedback.error(context, msg);
       },
     );
   }
 
   void _submit() {
     final name = _nameController.text.trim();
-    if (name.isEmpty) return;
+    if (name.isEmpty) {
+      setState(() => _nameError = 'Bitte gib etwas ein');
+      return;
+    }
     if (widget.missingApiKeyMessage != null) {
-      setState(() => _voiceError = widget.missingApiKeyMessage);
+      AppFeedback.error(context, widget.missingApiKeyMessage!);
       return;
     }
     if (_isListening) _voiceService.stop();
@@ -89,8 +95,8 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return AlertDialog(
       title: const Text('Eintrag hinzufügen'),
@@ -102,72 +108,13 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Beschreibe deine Mahlzeit oder Aktivität per Text oder Sprache – die KI erkennt und berechnet alles automatisch.',
+              'Beschreibe deine Mahlzeit oder Aktivität per Text oder Sprache – '
+              'die KI erkennt und berechnet alles automatisch.',
               style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+                color: scheme.onSurfaceVariant,
               ),
             ),
-            if (VoiceInputService.isPlatformSupported) ...[
-              const SizedBox(height: 12),
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: _toggleVoice,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _isListening
-                        ? colorScheme.errorContainer
-                        : colorScheme.primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        _isListening ? Icons.mic : Icons.mic_none,
-                        color: _isListening
-                            ? colorScheme.onErrorContainer
-                            : colorScheme.onPrimaryContainer,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _isListening
-                              ? 'Ich höre zu … Tippen zum Stoppen'
-                              : 'Sprachmodus starten (z. B. „250 g Skyr mit Banane“)',
-                          style: textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: _isListening
-                                ? colorScheme.onErrorContainer
-                                : colorScheme.onPrimaryContainer,
-                          ),
-                        ),
-                      ),
-                      if (_isListening)
-                        SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: colorScheme.onErrorContainer,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            if (_voiceError != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _voiceError!,
-                style: textTheme.bodySmall?.copyWith(color: colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: 16),
+            const SizedBox(height: Space.md),
             AppTextField(
               controller: _nameController,
               label: 'Mahlzeit oder Aktivität',
@@ -175,9 +122,41 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.next,
               autofocus: !widget.initialVoiceMode,
+              errorText: _nameError,
+              onChanged: (_) {
+                if (_nameError != null) setState(() => _nameError = null);
+              },
               onSubmitted: (_) => _submit(),
             ),
-            const SizedBox(height: 16),
+            if (VoiceInputService.isPlatformSupported) ...[
+              const SizedBox(height: Space.sm),
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: 'Spracheingabe',
+                    onPressed: _toggleVoice,
+                    icon: Icon(
+                      _isListening
+                          ? Icons.mic_rounded
+                          : Icons.mic_none_rounded,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      _isListening ? 'Ich höre zu…' : 'Spracheingabe',
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (_isListening) ...[
+                const SizedBox(height: Space.xs),
+                const LinearProgressIndicator(minHeight: 2),
+              ],
+            ],
+            const SizedBox(height: Space.md),
             AppTextField(
               controller: _descriptionController,
               label: 'Beschreibung (optional)',
@@ -194,13 +173,7 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Abbrechen'),
         ),
-        ListenableBuilder(
-          listenable: _nameController,
-          builder: (context, _) => FilledButton(
-            onPressed: _nameController.text.trim().isEmpty ? null : _submit,
-            child: const Text('Hinzufügen'),
-          ),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Hinzufügen')),
       ],
     );
   }
