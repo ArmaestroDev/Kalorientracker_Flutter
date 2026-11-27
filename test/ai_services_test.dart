@@ -285,6 +285,47 @@ void main() {
         ),
       );
     });
+
+    test('cut-off JSON answer is reported as truncated', () async {
+      final service = GeminiApiService(
+        'k',
+        'gemini-3.8-flash',
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'candidates': [
+                {
+                  'content': {
+                    'parts': [
+                      {'text': '{"items": ['},
+                    ],
+                  },
+                  'finishReason': 'MAX_TOKENS',
+                },
+              ],
+            }),
+            200,
+          ),
+        ),
+      );
+      expect(
+        () => service.generate(
+          AiRequest.single(
+            system: 's',
+            prompt: 'p',
+            jsonOutput: true,
+            maxTokens: 8192,
+          ),
+        ),
+        throwsA(
+          isA<AiException>().having(
+            (e) => e.message,
+            'message',
+            contains('abgeschnitten'),
+          ),
+        ),
+      );
+    });
   });
 
   group('OpenAI and Grok', () {
@@ -355,6 +396,19 @@ void main() {
       expect(ApiServiceRepository.extractJsonObject('keine Daten'), isNull);
     });
 
+    test('extracts a top-level JSON array as item list', () {
+      expect(
+        ApiServiceRepository.extractJsonObject(
+          '```json\n[{"type": "food", "calories": 80}]\n```',
+        ),
+        {
+          'items': [
+            {'type': 'food', 'calories': 80},
+          ],
+        },
+      );
+    });
+
     test(
       'classification keeps amount, unit, category and per-100g values',
       () async {
@@ -377,9 +431,15 @@ void main() {
             }),
           ),
         );
-        final result = await repository.classifyAndProcess('250g Skyr', '', 82);
-        final info = result.foodInfo!;
-        expect(result.isFood, isTrue);
+        final result = await repository.classifyAndProcessAll(
+          '250g Skyr',
+          '',
+          82,
+        );
+        expect(result, hasLength(1));
+        final entry = result.first;
+        final info = entry.foodInfo!;
+        expect(entry.isFood, isTrue);
         expect(info.name, 'Skyr natur');
         expect(info.amount, 250);
         expect(info.unit, 'g');
@@ -388,14 +448,163 @@ void main() {
       },
     );
 
-    test('non-food input throws a readable error', () async {
+    test('several foods and one activity become separate entries', () async {
       final repository = ApiServiceRepository(
-        _FakeService('{"type": "unknown"}'),
+        _FakeService(
+          jsonEncode({
+            'items': [
+              {
+                'type': 'food',
+                'name': 'Reis',
+                'amount': 200,
+                'unit': 'g',
+                'calories': 260,
+                'protein': 5,
+                'carbs': 56,
+                'fat': 1,
+                'category': 'Beilagen',
+                'calories_100g': 130,
+              },
+              {
+                'type': 'food',
+                'name': 'Apfel',
+                'amount': 1,
+                'unit': 'Stk',
+                'calories': 80,
+                'protein': 0.5,
+                'carbs': 18,
+                'fat': 0.3,
+                'category': 'Obst',
+                'calories_100g': 52,
+              },
+              {
+                'type': 'activity',
+                'name': '30 Min Joggen',
+                'calories_burned': 250,
+              },
+            ],
+          }),
+        ),
       );
+      final result = await repository.classifyAndProcessAll(
+        '200 g Reis, ein Apfel, danach 30 min Joggen',
+        '',
+        null,
+      );
+      expect(result, hasLength(3));
+      expect(result[0].isFood, isTrue);
+      expect(result[0].foodInfo!.name, 'Reis');
+      expect(result[0].foodInfo!.amount, 200);
+      expect(result[1].isFood, isTrue);
+      expect(result[1].foodInfo!.name, 'Apfel');
+      expect(result[2].isFood, isFalse);
+      expect(result[2].activityInfo!.caloriesBurned, 250);
+    });
+
+    test('items without calories are dropped', () async {
+      final repository = ApiServiceRepository(
+        _FakeService(
+          jsonEncode({
+            'items': [
+              {
+                'type': 'food',
+                'name': 'Unbekannt',
+                'calories': 0,
+                'protein': 0,
+                'carbs': 0,
+                'fat': 0,
+              },
+              {
+                'type': 'food',
+                'name': 'Apfel',
+                'amount': 1,
+                'unit': 'Stk',
+                'calories': 80,
+                'protein': 0.5,
+                'carbs': 18,
+                'fat': 0.3,
+              },
+            ],
+          }),
+        ),
+      );
+      final result = await repository.classifyAndProcessAll(
+        'ein Apfel',
+        '',
+        null,
+      );
+      expect(result, hasLength(1));
+      expect(result.first.foodInfo!.name, 'Apfel');
+    });
+
+    test('unknown type and empty item list throw', () async {
       expect(
-        () => repository.classifyAndProcess('asdf', '', null),
+        () => ApiServiceRepository(
+          _FakeService('{"type": "unknown"}'),
+        ).classifyAndProcessAll('asdf', '', null),
         throwsA(isA<AiException>()),
       );
+      expect(
+        () => ApiServiceRepository(
+          _FakeService('{"items": []}'),
+        ).classifyAndProcessAll('asdf', '', null),
+        throwsA(isA<AiException>()),
+      );
+    });
+
+    test('a top-level JSON array is used as the item list', () async {
+      final repository = ApiServiceRepository(
+        _FakeService(
+          jsonEncode([
+            {
+              'type': 'food',
+              'name': 'Apfel',
+              'amount': 1,
+              'unit': 'Stk',
+              'calories': 80,
+              'protein': 0.5,
+              'carbs': 18,
+              'fat': 0.3,
+            },
+          ]),
+        ),
+      );
+      final result = await repository.classifyAndProcessAll(
+        'ein Apfel',
+        '',
+        null,
+      );
+      expect(result, hasLength(1));
+      expect(result.first.foodInfo!.name, 'Apfel');
+    });
+
+    test('unreadable first answer is retried once', () async {
+      final repository = ApiServiceRepository(
+        _FakeService.responses([
+          'abc {',
+          jsonEncode({
+            'items': [
+              {
+                'type': 'food',
+                'name': 'Apfel',
+                'amount': 1,
+                'unit': 'Stk',
+                'calories': 80,
+                'protein': 0.5,
+                'carbs': 18,
+                'fat': 0.3,
+              },
+            ],
+          }),
+        ]),
+      );
+      final result = await repository.classifyAndProcessAll(
+        'ein Apfel',
+        '',
+        null,
+      );
+      expect(result, hasLength(1));
+      expect(result.first.foodInfo!.name, 'Apfel');
     });
 
     test('missing provider throws instead of returning null', () {
@@ -408,8 +617,12 @@ void main() {
 }
 
 class _FakeService implements GenerativeService {
-  final String response;
-  _FakeService(this.response);
+  final List<String> responses;
+  int _calls = 0;
+
+  _FakeService(String response) : responses = [response];
+
+  _FakeService.responses(this.responses);
 
   @override
   String get model => 'fake';
@@ -418,7 +631,11 @@ class _FakeService implements GenerativeService {
   String get providerName => 'Fake';
 
   @override
-  Future<String> generate(AiRequest request) async => response;
+  Future<String> generate(AiRequest request) async {
+    final index = _calls < responses.length ? _calls : responses.length - 1;
+    _calls++;
+    return responses[index];
+  }
 
   @override
   void close() {}

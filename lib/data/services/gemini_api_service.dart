@@ -136,6 +136,11 @@ class GeminiApiService implements GenerativeService {
               : 'Gemini hat keine Antwort geliefert ($reason).',
         );
       }
+      if (request.jsonOutput && candidate['finishReason'] == 'MAX_TOKENS') {
+        throw const AiException(
+          'Gemini-Antwort wurde abgeschnitten. Bitte die Eingabe aufteilen oder erneut versuchen.',
+        );
+      }
       return text;
     }
     throw GenerativeService.tooManyToolRounds(providerName);

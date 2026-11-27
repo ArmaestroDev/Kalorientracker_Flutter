@@ -9,12 +9,20 @@ class UnifiedInputDialog extends StatefulWidget {
   final void Function(String name, String description) onSubmit;
   final bool initialVoiceMode;
   final String? missingApiKeyMessage;
+  final String initialName;
+  final String initialDescription;
+  final VoidCallback? onClear;
+  final void Function(String name, String description)? onDraftChanged;
 
   const UnifiedInputDialog({
     super.key,
     required this.onSubmit,
     this.initialVoiceMode = false,
     this.missingApiKeyMessage,
+    this.initialName = '',
+    this.initialDescription = '',
+    this.onClear,
+    this.onDraftChanged,
   });
 
   @override
@@ -26,12 +34,21 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
   final _descriptionController = TextEditingController();
   final _voiceService = VoiceInputService();
   bool _isListening = false;
+  bool _submitted = false;
   String? _nameError;
   String _voiceBaseText = '';
+
+  bool get _hasInput =>
+      _nameController.text.isNotEmpty ||
+      _descriptionController.text.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
+    _nameController.text = widget.initialName;
+    _descriptionController.text = widget.initialDescription;
+    _nameController.addListener(_refreshActions);
+    _descriptionController.addListener(_refreshActions);
     if (widget.initialVoiceMode) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _toggleVoice();
@@ -39,12 +56,29 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
     }
   }
 
+  void _refreshActions() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    if (!_submitted) {
+      widget.onDraftChanged?.call(
+        _nameController.text,
+        _descriptionController.text,
+      );
+    }
     _voiceService.cancel();
     _nameController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  void _clear() {
+    _nameController.clear();
+    _descriptionController.clear();
+    setState(() => _nameError = null);
+    widget.onClear?.call();
   }
 
   Future<void> _toggleVoice() async {
@@ -89,6 +123,7 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
       return;
     }
     if (_isListening) _voiceService.stop();
+    _submitted = true;
     widget.onSubmit(name, _descriptionController.text.trim());
     Navigator.of(context).pop();
   }
@@ -108,8 +143,8 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Beschreibe deine Mahlzeit oder Aktivität per Text oder Sprache – '
-              'die KI erkennt und berechnet alles automatisch.',
+              'Beschreibe eine oder mehrere Mahlzeiten oder Aktivitäten per Text '
+              'oder Sprache – die KI legt für jede einen eigenen Eintrag an.',
               style: textTheme.bodySmall?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
@@ -118,15 +153,17 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
             AppTextField(
               controller: _nameController,
               label: 'Mahlzeit oder Aktivität',
-              hint: 'z. B. 250 g Skyr oder 60 min BJJ',
+              hint: 'z. B. 200 g Reis, 150 g Hähnchen und 30 min Joggen',
               textCapitalization: TextCapitalization.sentences,
-              textInputAction: TextInputAction.next,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              maxLines: 6,
+              minLines: 1,
               autofocus: !widget.initialVoiceMode,
               errorText: _nameError,
               onChanged: (_) {
                 if (_nameError != null) setState(() => _nameError = null);
               },
-              onSubmitted: (_) => _submit(),
             ),
             if (VoiceInputService.isPlatformSupported) ...[
               const SizedBox(height: Space.sm),
@@ -169,6 +206,8 @@ class _UnifiedInputDialogState extends State<UnifiedInputDialog> {
         ),
       ),
       actions: [
+        if (_hasInput)
+          TextButton(onPressed: _clear, child: const Text('Leeren')),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Abbrechen'),
