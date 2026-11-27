@@ -215,7 +215,14 @@ class OpenAiCompatibleService implements GenerativeService {
                 : GenerativeService.textTimeout,
           );
     } on TimeoutException catch (e) {
-      throw GenerativeService.networkError(providerName, e);
+      throw GenerativeService.networkError(
+        providerName,
+        e,
+        timeoutSeconds: (request.hasMedia
+                ? GenerativeService.imageTimeout
+                : GenerativeService.textTimeout)
+            .inSeconds,
+      );
     } on http.ClientException catch (e) {
       throw GenerativeService.networkError(providerName, e);
     }

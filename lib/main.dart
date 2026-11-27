@@ -50,7 +50,7 @@ class KalorientrackerApp extends StatelessWidget {
           ],
           theme: AppTheme.light(provider.currentTheme),
           darkTheme: AppTheme.dark(provider.currentTheme),
-          themeMode: AppTheme.option(provider.currentTheme).mode,
+          themeMode: provider.themeMode,
           home: const AppShell(),
         );
       },

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../data/services/food_api_service.dart';
+import '../theme/tokens.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/kit/kit.dart';
 import 'barcode_scanner_screen.dart';
 
 /// Screen for photo-based input: unified barcode scanning + food photo AI estimation.
@@ -151,9 +153,7 @@ class _PhotoInputScreenState extends State<PhotoInputScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _checkingBarcode = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Fehler beim Aufnehmen: $e')));
+        AppFeedback.error(context, 'Fehler beim Aufnehmen: $e');
       }
     }
   }
@@ -172,9 +172,7 @@ class _PhotoInputScreenState extends State<PhotoInputScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _checkingBarcode = false);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Fehler beim Auswählen: $e')));
+        AppFeedback.error(context, 'Fehler beim Auswählen: $e');
       }
     }
   }
@@ -196,161 +194,148 @@ class _PhotoInputScreenState extends State<PhotoInputScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: const Text('Foto & Barcode')),
-      body: Stack(
+      body: Column(
         children: [
-          _capturedImage == null
-              ? _buildSelectionView()
-              : _buildPreviewView(),
-          if (_checkingBarcode)
-            Container(
-              color: Colors.black38,
-              child: const Center(
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Prüfe Bild auf Barcode …'),
-                      ],
-                    ),
-                  ),
+          if (_checkingBarcode) ...[
+            const LinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Space.screenX,
+                Space.sm,
+                Space.screenX,
+                0,
+              ),
+              child: Text(
+                'Prüfe Bild auf Barcode …',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
+          ],
+          Expanded(
+            child: _capturedImage == null
+                ? _buildSelectionView()
+                : _buildPreviewView(),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildSelectionView() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Wähle eine Option:',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Barcodes in Fotos werden automatisch erkannt – ohne Barcode schätzt die KI die Kalorien.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 24),
-          if (_supportsLiveScanner) ...[
-            _OptionCard(
-              icon: Icons.qr_code_scanner,
-              title: 'Kamera (Barcode & Foto)',
-              subtitle: 'Live-Barcode-Scanner oder direkt Foto aufnehmen',
-              onTap: _openBarcodeScanner,
-            ),
-            const SizedBox(height: 16),
-          ],
-          _OptionCard(
-            icon: Icons.camera_alt,
-            title: 'Foto aufnehmen',
-            subtitle: 'Erkennt Barcode automatisch, sonst KI-Schätzung',
-            onTap: _takePhoto,
-          ),
-          const SizedBox(height: 16),
-          _OptionCard(
-            icon: Icons.photo_library,
-            title: 'Aus Galerie wählen',
-            subtitle: 'Erkennt Barcode automatisch, sonst KI-Schätzung',
-            onTap: _pickFromGallery,
-          ),
-        ],
+    final theme = Theme.of(context);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        Space.screenX,
+        Space.sm,
+        Space.screenX,
+        Space.xxl,
       ),
+      children: [
+        const SectionHeader('Wähle eine Option', padding: EdgeInsets.zero),
+        const SizedBox(height: Space.xs),
+        Text(
+          'Barcodes in Fotos werden automatisch erkannt – ohne Barcode schätzt die KI die Kalorien.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: Space.lg),
+        if (_supportsLiveScanner) ...[
+          _OptionCard(
+            icon: Icons.qr_code_scanner_rounded,
+            title: 'Kamera (Barcode & Foto)',
+            subtitle: 'Live-Barcode-Scanner oder direkt Foto aufnehmen',
+            onTap: _openBarcodeScanner,
+          ),
+          const SizedBox(height: Space.md),
+        ],
+        _OptionCard(
+          icon: Icons.photo_camera_outlined,
+          title: 'Foto aufnehmen',
+          subtitle: 'Erkennt Barcode automatisch, sonst KI-Schätzung',
+          onTap: _takePhoto,
+        ),
+        const SizedBox(height: Space.md),
+        _OptionCard(
+          icon: Icons.photo_library_outlined,
+          title: 'Aus Galerie wählen',
+          subtitle: 'Erkennt Barcode automatisch, sonst KI-Schätzung',
+          onTap: _pickFromGallery,
+        ),
+      ],
     );
   }
 
   Widget _buildPreviewView() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.memory(
-              _capturedImage!,
-              height: 300,
-              fit: BoxFit.cover,
-            ),
-          ),
-          if (_detectedUnknownBarcode != null) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        Space.screenX,
+        Space.sm,
+        Space.screenX,
+        Space.xxl,
+      ),
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(Corner.lg),
+          child: Image.memory(_capturedImage!, height: 300, fit: BoxFit.cover),
+        ),
+        if (_detectedUnknownBarcode != null) ...[
+          const SizedBox(height: Space.md),
+          Notice(
+            message:
                 'Barcode $_detectedUnknownBarcode nicht in der Datenbank gefunden – schätze das Foto jetzt einfach direkt mit KI.',
-                style: TextStyle(color: colorScheme.onSecondaryContainer),
-              ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          AppTextField(
-            controller: _descriptionController,
-            label: 'Beschreibung (optional)',
-            hint: 'z. B. Schnitzel mit Pommes, ca. 300 g',
-            textCapitalization: TextCapitalization.sentences,
-            maxLines: 3,
-            minLines: 1,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Die KI analysiert das Bild und schätzt die Kalorien.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: _isProcessing
-                      ? null
-                      : () {
-                          setState(() {
-                            _capturedImage = null;
-                            _detectedUnknownBarcode = null;
-                            _descriptionController.clear();
-                          });
-                        },
-                  child: const Text('Neues Foto'),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: FilledButton(
-                  onPressed: _isProcessing ? null : _submitPhoto,
-                  child: _isProcessing
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Analysieren'),
-                ),
-              ),
-            ],
           ),
         ],
-      ),
+        const SizedBox(height: Space.lg),
+        AppTextField(
+          controller: _descriptionController,
+          label: 'Beschreibung (optional)',
+          hint: 'z. B. Schnitzel mit Pommes, ca. 300 g',
+          textCapitalization: TextCapitalization.sentences,
+          maxLines: 3,
+          minLines: 1,
+        ),
+        const SizedBox(height: Space.sm),
+        Text(
+          'Die KI analysiert das Bild und schätzt die Kalorien.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: Space.lg),
+        FilledButton.icon(
+          onPressed: _isProcessing ? null : _submitPhoto,
+          icon: _isProcessing
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.analytics_outlined),
+          label: const Text('Analysieren'),
+        ),
+        const SizedBox(height: Space.md),
+        OutlinedButton.icon(
+          onPressed: _isProcessing
+              ? null
+              : () {
+                  setState(() {
+                    _capturedImage = null;
+                    _detectedUnknownBarcode = null;
+                    _descriptionController.clear();
+                  });
+                },
+          icon: const Icon(Icons.refresh_rounded),
+          label: const Text('Neues Foto'),
+        ),
+      ],
     );
   }
 }
@@ -370,46 +355,39 @@ class _OptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 40,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(width: 20),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    return AppCard(
+      onTap: onTap,
+      padding: const EdgeInsets.all(Space.lg),
+      child: Row(
+        children: [
+          Icon(icon, size: 24, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: Space.lg),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              Icon(
-                Icons.arrow_forward_ios,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ],
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+          Icon(
+            Icons.chevron_right,
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ],
       ),
     );
   }

@@ -53,6 +53,7 @@ class GeminiApiService implements GenerativeService {
       contents.add({'role': message.isUser ? 'user' : 'model', 'parts': parts});
     }
 
+    final thinkingConfig = _thinkingConfig(request);
     for (var round = 0; round <= GenerativeService.maxToolRounds; round++) {
       final json = await _post({
         'system_instruction': {
@@ -77,6 +78,7 @@ class GeminiApiService implements GenerativeService {
         'generationConfig': {
           'maxOutputTokens': request.maxTokens,
           if (request.jsonOutput) 'responseMimeType': 'application/json',
+          if (thinkingConfig != null) 'thinkingConfig': thinkingConfig,
         },
       }, request);
 
@@ -130,13 +132,24 @@ class GeminiApiService implements GenerativeService {
         final reason = candidate['finishReason'];
         throw AiException(
           reason == 'MAX_TOKENS'
-              ? 'Gemini-Antwort wurde abgeschnitten. Bitte erneut versuchen.'
+              ? 'Gemini-Antwort wurde abgeschnitten. Bitte erneut versuchen oder im Profil ein anderes Modell wählen.'
               : 'Gemini hat keine Antwort geliefert ($reason).',
         );
       }
       return text;
     }
     throw GenerativeService.tooManyToolRounds(providerName);
+  }
+
+  Map<String, dynamic>? _thinkingConfig(AiRequest request) {
+    final light = request.jsonOutput || request.maxTokens < 4096;
+    if (model.startsWith('gemini-2.5') && !model.contains('pro')) {
+      return {'thinkingBudget': light ? 0 : 1024};
+    }
+    if (model.startsWith('gemini-3')) {
+      return {'thinkingLevel': light ? 'low' : 'medium'};
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> _post(
@@ -163,7 +176,14 @@ class GeminiApiService implements GenerativeService {
                 : GenerativeService.textTimeout,
           );
     } on TimeoutException catch (e) {
-      throw GenerativeService.networkError(providerName, e);
+      throw GenerativeService.networkError(
+        providerName,
+        e,
+        timeoutSeconds: (request.hasMedia
+                ? GenerativeService.imageTimeout
+                : GenerativeService.textTimeout)
+            .inSeconds,
+      );
     } on http.ClientException catch (e) {
       throw GenerativeService.networkError(providerName, e);
     }

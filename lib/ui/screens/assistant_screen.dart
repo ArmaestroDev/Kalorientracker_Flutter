@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../data/models/chat_message.dart';
 import '../../logic/providers/main_provider.dart';
 import '../../logic/voice_input_service.dart';
-import '../widgets/app_text_field.dart';
+import '../theme/tokens.dart';
+import '../widgets/kit/kit.dart';
 import 'plans_screen.dart';
 
 class _QuickAction {
@@ -17,7 +19,9 @@ class _QuickAction {
 
 /// Personal coach: a chat that always knows the user's profile, plans, goals and log
 class AssistantScreen extends StatefulWidget {
-  const AssistantScreen({super.key});
+  final VoidCallback? onOpenProfile;
+
+  const AssistantScreen({super.key, this.onOpenProfile});
 
   @override
   State<AssistantScreen> createState() => _AssistantScreenState();
@@ -33,7 +37,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
 
   static const _quickActions = [
     _QuickAction(
-      Icons.restaurant_menu,
+      Icons.restaurant_menu_outlined,
       'Was soll ich jetzt essen?',
       'Was soll ich als Nächstes essen? Schlag mir 2–3 konkrete Optionen vor, die zu meinen Plänen (falls vorhanden), meinem restlichen Budget, meinem Proteinziel und meinem Alltag passen. Nenne jeweils ungefähre kcal und Protein.',
     ),
@@ -43,22 +47,22 @@ class _AssistantScreenState extends State<AssistantScreen> {
       'Wie viele Kalorien habe ich diese Woche schon gegessen und wie viele bleiben mir noch? Wie verteile ich den Rest sinnvoll auf die übrigen Tage, auch mit Blick aufs Wochenende?',
     ),
     _QuickAction(
-      Icons.today,
+      Icons.today_outlined,
       'Tagesrückblick',
       'Gib mir einen kurzen Rückblick auf diesen Tag: Wie stehe ich bei Kalorien und Protein, was lief gut und was mache ich beim nächsten Mal besser?',
     ),
     _QuickAction(
-      Icons.nightlight_round,
+      Icons.nightlight_outlined,
       'Hunger am Abend',
       'Ich habe gerade Hunger. Was kann ich jetzt noch essen, ohne mein Tagesbudget zu sprengen? Sättigend und eiweißreich, bitte mit Mengen.',
     ),
     _QuickAction(
-      Icons.calendar_view_week,
+      Icons.calendar_view_week_outlined,
       'Wochenrückblick',
       'Analysiere meine letzten 7 Tage: durchschnittliche Kalorien und Protein im Vergleich zu meinen Zielen, Muster (z. B. Wochenende, Abende), Gewichtstrend und die 3 wichtigsten Stellschrauben für nächste Woche.',
     ),
     _QuickAction(
-      Icons.calendar_month,
+      Icons.calendar_month_outlined,
       'Monatsrückblick',
       'Analysiere meine letzten 30 Tage wochenweise: Bin ich auf Kurs zu meinem Ziel? Welche Lebensmittel liefern die meisten Kalorien, was sind wiederkehrende Muster, wie konsequent logge ich, und was sollte ich ändern?',
     ),
@@ -102,9 +106,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
       },
       onError: (msg) {
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(msg)));
+        AppFeedback.error(context, msg);
       },
     );
   }
@@ -126,6 +128,12 @@ class _AssistantScreenState extends State<AssistantScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const PlansScreen()));
+  }
+
+  Future<void> _copy(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    AppFeedback.success(context, 'Kopiert');
   }
 
   Future<void> _confirmClear(MainProvider provider) async {
@@ -159,12 +167,32 @@ class _AssistantScreenState extends State<AssistantScreen> {
         final itemCount = messages.length + (provider.assistantBusy ? 1 : 0);
         _scrollToBottomIfNeeded(itemCount);
 
+        final theme = Theme.of(context);
+        final profile = provider.userProfile;
+        final model = profile.modelFor(profile.selectedProvider);
+
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Dein Coach'),
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Coach',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '${profile.selectedProvider.label} · $model',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
             actions: [
               IconButton(
-                tooltip: 'Ernährungs- & Trainingspläne (PDF)',
+                tooltip: 'Pläne',
                 onPressed: _openPlans,
                 icon: Badge.count(
                   count: provider.activePlanCount,
@@ -172,25 +200,47 @@ class _AssistantScreenState extends State<AssistantScreen> {
                   child: const Icon(Icons.description_outlined),
                 ),
               ),
-              if (messages.isNotEmpty)
-                IconButton(
-                  tooltip: 'Unterhaltung löschen',
-                  icon: const Icon(Icons.delete_sweep_outlined),
-                  onPressed: provider.assistantBusy
-                      ? null
-                      : () => _confirmClear(provider),
-                ),
+              IconButton(
+                tooltip: 'Chat leeren',
+                icon: const Icon(Icons.delete_sweep_outlined),
+                onPressed: provider.assistantBusy || messages.isEmpty
+                    ? null
+                    : () => _confirmClear(provider),
+              ),
             ],
           ),
           body: SafeArea(
             child: Column(
               children: [
+                if (provider.missingApiKeyMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      Space.screenX,
+                      Space.sm,
+                      Space.screenX,
+                      0,
+                    ),
+                    child: Notice(
+                      tone: NoticeTone.error,
+                      title: 'Kein API-Schlüssel',
+                      message: provider.missingApiKeyMessage!,
+                      actionLabel: widget.onOpenProfile == null
+                          ? null
+                          : 'Zum Profil',
+                      onAction: widget.onOpenProfile,
+                    ),
+                  ),
                 Expanded(
                   child: messages.isEmpty && !provider.assistantBusy
                       ? _buildIntro(provider)
                       : ListView.builder(
                           controller: _scrollController,
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                          padding: const EdgeInsets.fromLTRB(
+                            Space.screenX,
+                            Space.sm,
+                            Space.screenX,
+                            Space.sm,
+                          ),
                           itemCount: itemCount,
                           itemBuilder: (context, index) {
                             if (index >= messages.length) {
@@ -205,6 +255,9 @@ class _AssistantScreenState extends State<AssistantScreen> {
                               onRetry: message.isError && isLast
                                   ? provider.retryAssistant
                                   : null,
+                              onCopy: message.isUser || message.isError
+                                  ? null
+                                  : () => _copy(message.text),
                             );
                           },
                         ),
@@ -220,162 +273,198 @@ class _AssistantScreenState extends State<AssistantScreen> {
   }
 
   Widget _buildIntro(MainProvider provider) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final profile = provider.userProfile;
-    final activePlans = provider.activePlanCount;
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Icon(Icons.auto_awesome, size: 40, color: colorScheme.primary),
-        const SizedBox(height: 12),
-        Text(
-          'Hi! Ich kenne dein Profil, deine Pläne, deine Ziele und dein Tagebuch.',
-          style: textTheme.titleMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Frag mich alles rund um Essen, Training und deine Fortschritte.',
-          style: textTheme.bodyMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(
+            Space.screenX,
+            Space.lg,
+            Space.screenX,
+            Space.lg,
           ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 12),
-        Card(
-          clipBehavior: Clip.antiAlias,
-          color: activePlans > 0
-              ? colorScheme.primaryContainer
-              : colorScheme.surfaceContainerHigh,
-          child: ListTile(
-            leading: Icon(
-              Icons.picture_as_pdf_outlined,
-              color: activePlans > 0
-                  ? colorScheme.onPrimaryContainer
-                  : colorScheme.primary,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.auto_awesome,
+                    size: 32,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(height: Space.lg),
+                Text(
+                  'Dein Ernährungscoach',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: Space.sm),
+                Text(
+                  'Frag mich alles zu Ernährung, Training und deinen Zielen. Ich kenne deine Einträge und kann Mahlzeiten für dich eintragen.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: Space.xl),
+                Wrap(
+                  spacing: Space.sm,
+                  runSpacing: Space.sm,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final action in _quickActions)
+                      ActionChip(
+                        avatar: Icon(
+                          action.icon,
+                          size: 18,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        label: Text(action.label),
+                        onPressed: provider.assistantBusy
+                            ? null
+                            : () => _send(
+                                provider,
+                                action.prompt,
+                                displayText: action.label,
+                              ),
+                      ),
+                  ],
+                ),
+                if (profile.aboutMe.trim().isEmpty) ...[
+                  const SizedBox(height: Space.lg),
+                  const Notice(
+                    tone: NoticeTone.info,
+                    message:
+                        'Tipp: Erzähl im Profil unter „Über mich“ etwas über dich – dann werden die Antworten persönlicher.',
+                  ),
+                ],
+              ],
             ),
-            title: Text(
-              activePlans > 0
-                  ? '$activePlans ${activePlans == 1 ? 'Plan' : 'Pläne'} aktiv'
-                  : 'Ernährungs- / Trainingsplan hinterlegen',
-            ),
-            subtitle: Text(
-              activePlans > 0
-                  ? 'Dein Coach orientiert sich bei Empfehlungen daran.'
-                  : 'PDF hochladen oder Text einfügen, damit dein Coach danach plant.',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _openPlans,
           ),
-        ),
-        if (provider.missingApiKeyMessage != null || profile.aboutMe.isEmpty)
-          Card(
-            margin: const EdgeInsets.only(top: 12),
-            color: colorScheme.secondaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                [
-                  if (provider.missingApiKeyMessage != null)
-                    provider.missingApiKeyMessage!,
-                  if (profile.aboutMe.isEmpty)
-                    'Tipp: Schreib im Profil unter „Über mich“, wie dein Alltag aussieht (Training, wo du isst, Vorlieben). Dann werden die Vorschläge viel persönlicher.',
-                ].join('\n\n'),
-                style: TextStyle(color: colorScheme.onSecondaryContainer),
-              ),
-            ),
-          ),
-        const SizedBox(height: 16),
-        for (final action in _quickActions)
-          Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            clipBehavior: Clip.antiAlias,
-            child: ListTile(
-              leading: Icon(action.icon, color: colorScheme.primary),
-              title: Text(action.label),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () =>
-                  _send(provider, action.prompt, displayText: action.label),
-            ),
-          ),
-      ],
+        );
+      },
     );
   }
 
   Widget _buildQuickActionRow(MainProvider provider) {
-    return SizedBox(
-      height: 48,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        itemCount: _quickActions.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final action = _quickActions[index];
-          return ActionChip(
-            avatar: Icon(action.icon, size: 18),
-            label: Text(action.label),
-            onPressed: provider.assistantBusy
-                ? null
-                : () =>
-                      _send(provider, action.prompt, displayText: action.label),
-          );
-        },
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(
+        Space.screenX,
+        Space.sm,
+        Space.screenX,
+        0,
+      ),
+      child: Row(
+        children: [
+          for (final action in _quickActions)
+            Padding(
+              padding: const EdgeInsets.only(right: Space.sm),
+              child: ActionChip(
+                avatar: Icon(action.icon, size: 18),
+                label: Text(action.label),
+                onPressed: provider.assistantBusy
+                    ? null
+                    : () => _send(
+                        provider,
+                        action.prompt,
+                        displayText: action.label,
+                      ),
+              ),
+            ),
+        ],
       ),
     );
   }
 
   Widget _buildInputBar(MainProvider provider) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 8, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: AppTextField(
-              controller: _inputController,
-              hint: _isListening ? 'Ich höre zu …' : 'Frag deinen Coach …',
-              textCapitalization: TextCapitalization.sentences,
-              keyboardType: TextInputType.multiline,
-              maxLines: 5,
-              minLines: 1,
-              filled: true,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(24),
-                borderSide: BorderSide.none,
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      color: scheme.surface,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Space.screenX,
+            Space.sm,
+            Space.screenX,
+            Space.sm,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (VoiceInputService.isPlatformSupported) ...[
+                if (_isListening)
+                  IconButton.filled(
+                    tooltip: 'Spracheingabe',
+                    style: IconButton.styleFrom(
+                      backgroundColor: scheme.errorContainer,
+                      foregroundColor: scheme.onErrorContainer,
+                    ),
+                    icon: const Icon(Icons.stop_rounded),
+                    onPressed: provider.assistantBusy ? null : _toggleVoice,
+                  )
+                else
+                  IconButton(
+                    tooltip: 'Spracheingabe',
+                    icon: const Icon(Icons.mic_none_rounded),
+                    onPressed: provider.assistantBusy ? null : _toggleVoice,
+                  ),
+                const SizedBox(width: Space.xs),
+              ],
+              Expanded(
+                child: TextField(
+                  controller: _inputController,
+                  minLines: 1,
+                  maxLines: 5,
+                  textCapitalization: TextCapitalization.sentences,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (value) => _send(provider, value),
+                  decoration: InputDecoration(
+                    hintText: 'Nachricht an den Coach…',
+                    border: UnderlineInputBorder(
+                      borderRadius: BorderRadius.circular(Corner.xl),
+                      borderSide: BorderSide.none,
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderRadius: BorderRadius.circular(Corner.xl),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: Space.sm),
+              ListenableBuilder(
+                listenable: _inputController,
+                builder: (context, _) => IconButton.filled(
+                  tooltip: 'Senden',
+                  icon: const Icon(Icons.arrow_upward_rounded),
+                  onPressed:
+                      provider.assistantBusy ||
+                          _inputController.text.trim().isEmpty
+                      ? null
+                      : () => _send(provider, _inputController.text),
+                ),
+              ),
+            ],
           ),
-          if (VoiceInputService.isPlatformSupported) ...[
-            const SizedBox(width: 4),
-            IconButton(
-              tooltip: _isListening ? 'Aufnahme stoppen' : 'Spracheingabe',
-              style: _isListening
-                  ? IconButton.styleFrom(
-                      backgroundColor: colorScheme.errorContainer,
-                      foregroundColor: colorScheme.onErrorContainer,
-                    )
-                  : null,
-              icon: Icon(_isListening ? Icons.stop : Icons.mic_none),
-              onPressed: provider.assistantBusy ? null : _toggleVoice,
-            ),
-          ],
-          const SizedBox(width: 4),
-          ListenableBuilder(
-            listenable: _inputController,
-            builder: (context, _) => IconButton.filled(
-              tooltip: 'Senden',
-              icon: const Icon(Icons.send),
-              onPressed:
-                  provider.assistantBusy || _inputController.text.trim().isEmpty
-                  ? null
-                  : () => _send(provider, _inputController.text),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -384,73 +473,91 @@ class _AssistantScreenState extends State<AssistantScreen> {
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final VoidCallback? onRetry;
+  final VoidCallback? onCopy;
 
-  const _MessageBubble({required this.message, this.onRetry});
+  const _MessageBubble({required this.message, this.onRetry, this.onCopy});
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    if (message.isError) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: Space.xs),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width * 0.8,
+            ),
+            child: Notice(
+              tone: NoticeTone.error,
+              message: message.text,
+              actionLabel: onRetry == null ? null : 'Erneut versuchen',
+              onAction: onRetry,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final isUser = message.isUser;
-    final background = message.isError
-        ? colorScheme.errorContainer
-        : isUser
-        ? colorScheme.primaryContainer
-        : colorScheme.surfaceContainerHigh;
-    final foreground = message.isError
-        ? colorScheme.onErrorContainer
-        : isUser
-        ? colorScheme.onPrimaryContainer
-        : colorScheme.onSurface;
+    final background = isUser ? scheme.primary : scheme.surfaceContainerLowest;
+    final foreground = isUser ? scheme.onPrimary : scheme.onSurface;
+
+    final bubble = Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.md,
+        vertical: Space.sm,
+      ),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(Corner.lg),
+          topRight: const Radius.circular(Corner.lg),
+          bottomLeft: Radius.circular(isUser ? Corner.lg : Corner.xs),
+          bottomRight: Radius.circular(isUser ? Corner.xs : Corner.lg),
+        ),
+      ),
+      child: isUser
+          ? SelectableText(
+              message.displayText ?? message.text,
+              style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+            )
+          : MarkdownBody(
+              data: message.text,
+              selectable: true,
+              styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                p: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+                h1: theme.textTheme.titleLarge?.copyWith(color: foreground),
+                h2: theme.textTheme.titleMedium?.copyWith(color: foreground),
+                h3: theme.textTheme.titleSmall?.copyWith(color: foreground),
+                blockquoteDecoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(Corner.sm),
+                ),
+                code: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurface,
+                  backgroundColor: scheme.surfaceContainerHighest,
+                ),
+              ),
+            ),
+    );
+
+    final wrapped = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.8,
+      ),
+      child: onCopy == null
+          ? bubble
+          : GestureDetector(onLongPress: onCopy, child: bubble),
+    );
 
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.85,
-        ),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(18),
-              topRight: const Radius.circular(18),
-              bottomLeft: Radius.circular(isUser ? 18 : 4),
-              bottomRight: Radius.circular(isUser ? 4 : 18),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (isUser || message.isError)
-                SelectableText(
-                  message.displayText ?? message.text,
-                  style: TextStyle(color: foreground),
-                )
-              else
-                MarkdownBody(
-                  data: message.text,
-                  selectable: true,
-                  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context))
-                      .copyWith(
-                        p: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.copyWith(color: foreground),
-                      ),
-                ),
-              if (onRetry != null)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton.icon(
-                    onPressed: onRetry,
-                    icon: const Icon(Icons.refresh, size: 18),
-                    label: const Text('Erneut versuchen'),
-                  ),
-                ),
-            ],
-          ),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Space.xs),
+        child: wrapped,
       ),
     );
   }
@@ -463,15 +570,25 @@ class _TypingBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        margin: const EdgeInsets.symmetric(vertical: Space.xs),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Space.md,
+          vertical: Space.sm,
+        ),
         decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(18),
+          color: scheme.surfaceContainerLowest,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(Corner.lg),
+            topRight: Radius.circular(Corner.lg),
+            bottomRight: Radius.circular(Corner.lg),
+            bottomLeft: Radius.circular(Corner.xs),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -481,10 +598,12 @@ class _TypingBubble extends StatelessWidget {
               height: 16,
               child: CircularProgressIndicator(strokeWidth: 2),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: Space.sm),
             Text(
-              status ?? 'Denkt nach …',
-              style: TextStyle(color: colorScheme.onSurfaceVariant),
+              status ?? 'Denkt nach…',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),

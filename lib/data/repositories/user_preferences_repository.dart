@@ -1,5 +1,8 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../ui/theme/app_palettes.dart';
+import '../models/ai_model_option.dart';
+import '../models/enums.dart';
 import '../models/user_profile.dart';
 import '../models/calorie_goals.dart';
 import '../models/chat_message.dart';
@@ -9,6 +12,8 @@ class UserPreferencesRepository {
   static const String _profileKey = 'user_profile';
   static const String _goalsKey = 'calorie_goals';
   static const String _themeKey = 'app_theme';
+  static const String _themeModeKey = 'app_theme_mode';
+  static const String _modelCatalogKey = 'model_catalog';
   static const String _chatKey = 'assistant_chat';
   static const int _maxStoredMessages = 60;
 
@@ -58,12 +63,59 @@ class UserPreferencesRepository {
 
   Future<String> loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_themeKey) ?? 'Default';
+    return AppPalettes.byKey(prefs.getString(_themeKey) ?? 'amethyst').key;
   }
 
   Future<void> saveTheme(String themeName) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_themeKey, themeName);
+  }
+
+  Future<String> loadThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_themeModeKey) ?? 'system';
+  }
+
+  Future<void> saveThemeMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_themeModeKey, mode);
+  }
+
+  Future<Map<AiProvider, List<AiModelOption>>> loadModelCatalog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_modelCatalogKey);
+    if (jsonString == null) return {};
+
+    try {
+      final json = jsonDecode(jsonString);
+      if (json is! Map) return {};
+      final catalog = <AiProvider, List<AiModelOption>>{};
+      for (final provider in AiProvider.values) {
+        final rawModels = json[provider.name];
+        if (rawModels is! List) continue;
+        final options = rawModels
+            .whereType<Map>()
+            .map((e) => AiModelOption.fromJson(Map<String, dynamic>.from(e)))
+            .where((o) => o.id.isNotEmpty)
+            .toList();
+        if (options.isNotEmpty) catalog[provider] = options;
+      }
+      return catalog;
+    } catch (e) {
+      return {};
+    }
+  }
+
+  Future<void> saveModelCatalog(
+    Map<AiProvider, List<AiModelOption>> catalog,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final json = {
+      for (final entry in catalog.entries)
+        if (entry.value.isNotEmpty)
+          entry.key.name: entry.value.map((o) => o.toJson()).toList(),
+    };
+    await prefs.setString(_modelCatalogKey, jsonEncode(json));
   }
 
   Future<List<ChatMessage>> loadChatHistory() async {

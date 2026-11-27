@@ -7,8 +7,6 @@ class VoiceInputService {
   bool _isListening = false;
   String? _localeId;
 
-  bool get isListening => _isListening;
-
   static bool get isPlatformSupported {
     if (kIsWeb) return true;
     return defaultTargetPlatform == TargetPlatform.android ||

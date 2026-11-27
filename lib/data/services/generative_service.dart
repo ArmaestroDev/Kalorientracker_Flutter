@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import '../models/chat_message.dart';
@@ -77,7 +78,7 @@ abstract class GenerativeService {
 
   void close() {}
 
-  static const textTimeout = Duration(seconds: 120);
+  static const textTimeout = Duration(seconds: 60);
   static const maxToolRounds = 8;
 
   static AiException tooManyToolRounds(String provider) => AiException(
@@ -140,7 +141,7 @@ abstract class GenerativeService {
     }
   }
 
-  static const imageTimeout = Duration(seconds: 180);
+  static const imageTimeout = Duration(seconds: 90);
 
   /// Turns an HTTP error response into a message the user can act on
   static AiException httpError(
@@ -170,13 +171,13 @@ abstract class GenerativeService {
       400 when lower.contains('api key') || lower.contains('api_key') =>
         'API-Schlüssel ungültig. Bitte im Profil prüfen.',
       400 when lower.contains('model') =>
-        'Modell "$model" wird nicht unterstützt. Trage im Profil ein aktuelles Modell ein.',
+        'Modell "$model" wird nicht unterstützt. Wähle im Profil ein anderes Modell.',
       400 => 'Anfrage abgelehnt.',
       401 || 403 =>
         'API-Schlüssel ungültig oder ohne Berechtigung. Bitte im Profil prüfen.',
       402 => 'Kein Guthaben beim Anbieter.',
       404 =>
-        'Modell "$model" nicht gefunden. Trage im Profil ein aktuelles Modell ein.',
+        'Modell "$model" nicht gefunden. Wähle im Profil ein anderes Modell.',
       429 =>
         'Zu viele Anfragen oder Kontingent aufgebraucht. Bitte kurz warten.',
       >= 500 =>
@@ -186,7 +187,17 @@ abstract class GenerativeService {
     return AiException('$provider: $hint\n($status) $detail');
   }
 
-  static AiException networkError(String provider, Object error) {
+  static AiException networkError(
+    String provider,
+    Object error, {
+    int? timeoutSeconds,
+  }) {
+    if (error is TimeoutException) {
+      final timeout = timeoutSeconds ?? textTimeout.inSeconds;
+      return AiException(
+        '$provider: Keine Antwort nach $timeout Sekunden. Bitte erneut versuchen oder im Profil ein schnelleres Modell wählen.',
+      );
+    }
     return AiException(
       '$provider: Keine Verbindung oder Zeitüberschreitung. Bitte Internet prüfen und erneut versuchen.\n$error',
     );

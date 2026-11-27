@@ -1,9 +1,12 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../logic/providers/main_provider.dart';
+
 import '../../../data/models/food_item.dart';
-import '../app_text_field.dart';
+import '../../../logic/providers/main_provider.dart';
+import '../../theme/tokens.dart';
+import '../kit/kit.dart';
 
 class FoodRecallDialog extends StatefulWidget {
   final Function(FoodItem) onItemSelected;
@@ -14,104 +17,85 @@ class FoodRecallDialog extends StatefulWidget {
   State<FoodRecallDialog> createState() => _FoodRecallDialogState();
 }
 
-class _FoodRecallDialogState extends State<FoodRecallDialog>
-    with TickerProviderStateMixin {
+class _FoodRecallDialogState extends State<FoodRecallDialog> {
   final TextEditingController _searchController = TextEditingController();
   List<FoodItem> _items = [];
   List<String> _categories = [];
-  List<FoodItem> _categoryItems = [];
   bool _isLoading = true;
-  bool _loadingCategory = false;
-  TabController? _tabController;
   Timer? _searchDebounce;
   int _loadToken = 0;
-
   String? _selectedCategory;
+
+  String get _query => _searchController.text.trim();
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _loadInitial();
+    _load();
+    _loadCategories();
   }
 
   @override
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
-    _tabController?.dispose();
     super.dispose();
   }
 
-  Future<void> _loadInitial() async {
+  Future<void> _loadCategories() async {
+    final categories = await context.read<MainProvider>().getFoodCategories();
+    if (mounted) setState(() => _categories = categories);
+  }
+
+  Future<void> _load() async {
     final token = ++_loadToken;
+    final query = _query;
+    final category = _selectedCategory;
     setState(() => _isLoading = true);
     final provider = context.read<MainProvider>();
-    final items = await provider.getRecentFoodItems();
-    final categories = await provider.getFoodCategories();
+
+    List<FoodItem> items;
+    if (query.isNotEmpty) {
+      items = await provider.searchFoodItems(query);
+      if (category != null) {
+        items = items.where((item) => item.category == category).toList();
+      }
+    } else if (category != null) {
+      items = await provider.getFoodItemsByCategory(category);
+    } else {
+      items = await provider.getRecentFoodItems();
+    }
+
     if (mounted && token == _loadToken) {
       setState(() {
         _items = items;
-        _categories = categories;
         _isLoading = false;
       });
     }
   }
 
-  void _onSearchChanged(String query) {
-    setState(() => _selectedCategory = null);
+  void _onSearchChanged(String _) {
     _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 220), () {
-      _searchItems(query);
-    });
+    _searchDebounce = Timer(const Duration(milliseconds: 220), _load);
+    setState(() {});
   }
 
-  Future<void> _searchItems(String query) async {
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) {
-      await _loadInitial();
-      return;
-    }
-    final token = ++_loadToken;
-    setState(() => _isLoading = true);
-    final provider = context.read<MainProvider>();
-    final items = await provider.searchFoodItems(trimmed);
-    if (mounted && token == _loadToken) {
-      setState(() {
-        _items = items;
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _openCategory(String category) async {
-    setState(() {
-      _selectedCategory = category;
-      _loadingCategory = true;
-    });
-    final items = await context.read<MainProvider>().getFoodItemsByCategory(
-      category,
-    );
-    if (mounted && _selectedCategory == category) {
-      setState(() {
-        _categoryItems = items;
-        _loadingCategory = false;
-      });
-    }
+  void _selectCategory(String? category) {
+    _searchDebounce?.cancel();
+    setState(() => _selectedCategory = category);
+    _load();
   }
 
   Future<void> _deleteHistoryItem(FoodItem item) async {
-    final provider = context.read<MainProvider>();
-    await provider.deleteFoodItemFromHistory(item.id);
+    await context.read<MainProvider>().deleteFoodItemFromHistory(item.id);
     if (!mounted) return;
-    setState(() {
-      _items.removeWhere((i) => i.id == item.id);
-      _categoryItems.removeWhere((i) => i.id == item.id);
-    });
-    final categories = await provider.getFoodCategories();
-    if (mounted) {
-      setState(() => _categories = categories);
-    }
+    setState(() => _items.removeWhere((i) => i.id == item.id));
+    await _loadCategories();
+  }
+
+  void _choose(FoodItem item) {
+    Navigator.of(context).pop();
+    Future.microtask(() => widget.onItemSelected(item));
   }
 
   static String _unitLabel(FoodItem item) => switch (item.defaultUnit) {
@@ -121,14 +105,23 @@ class _FoodRecallDialogState extends State<FoodRecallDialog>
     _ => 'pro 100 g',
   };
 
-  Widget _buildHistoryList(List<FoodItem> items) {
-    if (items.isEmpty) {
-      return const Center(child: Text('Keine Einträge gefunden'));
+  Widget _buildBody() {
+    if (_isLoading) return const LoadingState();
+
+    if (_items.isEmpty) {
+      final title = _query.isNotEmpty
+          ? 'Keine Einträge gefunden'
+          : _selectedCategory != null
+          ? 'Keine Einträge in dieser Kategorie'
+          : 'Noch nichts gespeichert';
+      return EmptyState(icon: Icons.history_rounded, title: title);
     }
+
     return ListView.builder(
-      itemCount: items.length,
+      padding: const EdgeInsets.symmetric(vertical: Space.sm),
+      itemCount: _items.length,
       itemBuilder: (context, index) {
-        final item = items[index];
+        final item = _items[index];
         return ListTile(
           title: Text(item.name),
           subtitle: Text(
@@ -142,153 +135,97 @@ class _FoodRecallDialogState extends State<FoodRecallDialog>
                 icon: const Icon(Icons.delete_outline, size: 20),
                 onPressed: () => _deleteHistoryItem(item),
               ),
-              const Icon(Icons.add_circle_outline),
+              Icon(
+                Icons.add_rounded,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ],
           ),
-          onTap: () {
-            Navigator.of(context).pop();
-            Future.microtask(() {
-              widget.onItemSelected(item);
-            });
-          },
+          onTap: () => _choose(item),
         );
       },
     );
   }
 
-  Widget _buildCategoriesTab() {
-    if (_selectedCategory != null) {
-      final query = _searchController.text.trim().toLowerCase();
-      final filtered = query.isEmpty
-          ? _categoryItems
-          : _categoryItems
-                .where((i) => i.name.toLowerCase().contains(query))
-                .toList();
-      return Column(
+  Widget _buildCategoryChips() {
+    if (_categories.isEmpty) return const SizedBox.shrink();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(vertical: Space.sm),
+      child: Row(
         children: [
-          ListTile(
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () {
-                setState(() {
-                  _selectedCategory = null;
-                  _categoryItems = [];
-                });
-              },
-            ),
-            title: Text(
-              _selectedCategory!,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+          FilterChip(
+            label: const Text('Alle'),
+            selected: _selectedCategory == null,
+            onSelected: (_) => _selectCategory(null),
           ),
-          const Divider(height: 1),
-          Expanded(
-            child: _loadingCategory
-                ? const Center(child: CircularProgressIndicator())
-                : _buildHistoryList(filtered),
-          ),
+          for (final category in _categories) ...[
+            const SizedBox(width: Space.sm),
+            FilterChip(
+              label: Text(category),
+              selected: _selectedCategory == category,
+              onSelected: (selected) =>
+                  _selectCategory(selected ? category : null),
+            ),
+          ],
         ],
-      );
-    }
-
-    final categories = _searchController.text.trim().isEmpty
-        ? _categories
-        : (_items.map((e) => e.category).toSet().toList()..sort());
-    if (categories.isEmpty) {
-      return const Center(child: Text('Keine Kategorien verfügbar'));
-    }
-    return ListView.builder(
-      itemCount: categories.length,
-      itemBuilder: (context, index) {
-        final category = categories[index];
-        return ListTile(
-          leading: const Icon(Icons.folder_open),
-          title: Text(category),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _openCategory(category),
-        );
-      },
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Dialog(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        constraints: const BoxConstraints(maxHeight: 600, maxWidth: 500),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Verlauf durchsuchen',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: AppTextField(
-                    controller: _searchController,
-                    hint: 'Suche nach Essen …',
-                    onChanged: _onSearchChanged,
-                  ),
-                ),
-                ListenableBuilder(
-                  listenable: _searchController,
-                  builder: (context, _) {
-                    if (_searchController.text.isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-                    return IconButton(
-                      tooltip: 'Suche leeren',
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchController.clear();
-                        _onSearchChanged('');
-                      },
-                    );
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (_isLoading)
-              const Expanded(child: Center(child: CircularProgressIndicator()))
-            else
-              Expanded(
-                child: Column(
-                  children: [
-                    TabBar(
-                      controller: _tabController,
-                      tabs: const [
-                        Tab(text: 'Verlauf'),
-                        Tab(text: 'Kategorien'),
-                      ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 600, maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.all(Space.xl),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Verlauf durchsuchen',
+                      style: theme.textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      child: TabBarView(
-                        controller: _tabController,
-                        children: [
-                          _buildHistoryList(_items),
-                          _buildCategoriesTab(),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
+                  IconButton(
+                    tooltip: 'Schließen',
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: Space.md),
+              TextField(
+                controller: _searchController,
+                textInputAction: TextInputAction.search,
+                onChanged: _onSearchChanged,
+                decoration: InputDecoration(
+                  hintText: 'Suche nach Essen …',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'Suche leeren',
+                          onPressed: () {
+                            _searchController.clear();
+                            _onSearchChanged('');
+                          },
+                          icon: const Icon(Icons.clear_rounded),
+                        ),
                 ),
               ),
-          ],
+              _buildCategoryChips(),
+              const SizedBox(height: Space.sm),
+              Flexible(child: _buildBody()),
+            ],
+          ),
         ),
       ),
     );

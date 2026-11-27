@@ -1,0 +1,114 @@
+name: Release APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Java einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Flutter einrichten
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.50.1
+          cache: true
+
+      - name: Abhängigkeiten laden
+        run: flutter pub get
+
+      - name: Analyse
+        run: flutter analyze --no-fatal-infos
+
+      - name: Tests
+        run: flutter test
+
+      - name: Version lesen
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Signierung einrichten
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > android/app/upload.keystore
+            cat > android/key.properties <<EOF
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=upload.keystore
+          EOF
+          else
+            echo "::warning::No signing secrets - APKs are signed with a temporary debug key and will not update an installed app."
+          fi
+
+      - name: APKs bauen
+        run: flutter build apk --release --split-per-abi
+
+      - name: APKs hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks-${{ steps.version.outputs.tag }}-${{ github.run_number }}
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+
+      - name: Release-Notizen wählen
+        id: notes
+        shell: bash
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if [ -f "release_notes/$TAG.md" ]; then
+            echo "path=release_notes/$TAG.md" >> $GITHUB_OUTPUT
+          else
+            printf 'Automatischer Build von %s.\n' "${{ github.sha }}" > release_notes/_auto.md
+            echo "path=release_notes/_auto.md" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Release veröffentlichen
+        if: steps.version.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Kalorientracker Flutter Version ${{ steps.version.outputs.version }} APK
+          body_path: ${{ steps.notes.outputs.path }}
+          files: build/app/outputs/flutter-apk/app-*-release.apk
+          make_latest: true
+
+      - name: Hinweis auf bereits veröffentlichte Version
+        if: steps.version.outputs.exists == 'true'
+        run: echo "::notice::Version v${{ steps.version.outputs.version }} already released – bump the version in pubspec.yaml to publish a new release. APKs are available as workflow artifact."

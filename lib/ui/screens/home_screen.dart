@@ -1,26 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../../logic/providers/main_provider.dart';
-import '../../logic/widget_bridge.dart';
-import '../../data/models/food_entry.dart';
+
 import '../../data/models/activity_entry.dart';
-import '../theme/app_theme.dart';
-import '../widgets/goals_summary_card.dart';
-import '../widgets/weight_card.dart';
-import '../widgets/food_item_row.dart';
-import '../widgets/activity_item_row.dart';
-import '../widgets/dialogs/add_entry_dialog.dart';
-import '../widgets/dialogs/unified_input_dialog.dart';
-import '../widgets/dialogs/edit_food_dialog.dart';
-import '../widgets/dialogs/edit_activity_dialog.dart';
-import '../widgets/dialogs/barcode_scanner_dialog.dart';
-import '../widgets/dialogs/delete_confirmation_dialog.dart';
-import '../widgets/dialogs/food_recall_dialog.dart';
+import '../../data/models/food_entry.dart';
 import '../../data/models/food_item.dart';
 import '../../logic/number_format.dart';
+import '../../logic/providers/main_provider.dart';
+import '../../logic/widget_bridge.dart';
+import '../theme/tokens.dart';
+import '../widgets/activity_item_row.dart';
 import '../widgets/app_text_field.dart';
-import 'profile_screen.dart';
+import '../widgets/food_item_row.dart';
+import '../widgets/goals_summary_card.dart';
+import '../widgets/kit/kit.dart';
+import '../widgets/weight_card.dart';
+import '../widgets/dialogs/add_entry_dialog.dart';
+import '../widgets/dialogs/barcode_scanner_dialog.dart';
+import '../widgets/dialogs/delete_confirmation_dialog.dart';
+import '../widgets/dialogs/edit_activity_dialog.dart';
+import '../widgets/dialogs/edit_food_dialog.dart';
+import '../widgets/dialogs/food_recall_dialog.dart';
+import '../widgets/dialogs/unified_input_dialog.dart';
 import 'photo_input_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -40,6 +41,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static final _headerDateFormat = DateFormat('EEEE, d. MMMM', 'de_DE');
+  static final _shortDateFormat = DateFormat('EEE, d. MMM', 'de_DE');
+  static final _thousands = NumberFormat.decimalPattern('de_DE');
+
   String? _lastHandledWidgetAction;
 
   @override
@@ -73,6 +78,13 @@ class _HomeScreenState extends State<HomeScreen> {
           _openPhotoInput();
       }
     });
+  }
+
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day;
   }
 
   void _showAddEntryDialog() {
@@ -130,7 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? '${item.caloriesPer100g.round()} kcal pro ${unit == 'Stk' ? 'Stück' : 'Portion'}'
                         : '${item.caloriesPer100g.round()} kcal pro 100 $unit',
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: Space.lg),
                   AppTextField.number(
                     controller: amountController,
                     label: isPerUnit ? 'Anzahl' : 'Menge',
@@ -140,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onSubmitted: (_) => submit(),
                   ),
                   if (factor != null) ...[
-                    const SizedBox(height: 12),
+                    const SizedBox(height: Space.md),
                     Text(
                       '${(item.caloriesPer100g * factor).round()} kcal · '
                       'P ${(item.proteinPer100g * factor).round()} g · '
@@ -196,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
               'Entscheidend ist der 7-Tage-Durchschnitt.',
               style: Theme.of(dialogContext).textTheme.bodySmall,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: Space.lg),
             AppTextField.number(
               controller: controller,
               label: 'Gewicht',
@@ -324,15 +336,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _showDatePicker() async {
     final provider = context.read<MainProvider>();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selected = provider.selectedDate;
+    final initial = selected.isAfter(today)
+        ? today
+        : DateTime(selected.year, selected.month, selected.day);
     final date = await showDatePicker(
       context: context,
-      initialDate: provider.selectedDate,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: initial,
+      firstDate: DateTime(2020, 1, 1),
+      lastDate: today,
     );
     if (date != null) {
       provider.changeDate(date);
     }
+  }
+
+  Widget _entriesCard(List<Widget> rows) {
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            rows[i],
+          ],
+        ],
+      ),
+    );
   }
 
   @override
@@ -357,273 +389,155 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         }
 
+        final colorScheme = Theme.of(context).colorScheme;
+        final textTheme = Theme.of(context).textTheme;
+        final isToday = _isToday(provider.selectedDate);
+        final trailingStyle = textTheme.labelLarge?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        );
+
+        final foodRows = <Widget>[
+          for (final food in provider.foodEntries)
+            FoodItemRow(
+              food: food,
+              onEdit: () => _showEditFoodDialog(food),
+              onDelete: () => _showDeleteFoodDialog(food),
+            ),
+        ];
+        final activityRows = <Widget>[
+          for (final activity in provider.activityEntries)
+            ActivityItemRow(
+              activity: activity,
+              onEdit: () => _showEditActivityDialog(activity),
+              onDelete: () => _showDeleteActivityDialog(activity),
+            ),
+        ];
+
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Kalorientracker'),
-            actions: [
-              PopupMenuButton<String>(
-                tooltip: 'Farbschema',
-                icon: const Icon(Icons.palette_outlined),
-                onSelected: provider.changeTheme,
-                itemBuilder: (context) => [
-                  for (final option in AppTheme.options)
-                    CheckedPopupMenuItem(
-                      value: option.key,
-                      checked:
-                          AppTheme.option(provider.currentTheme).key ==
-                          option.key,
-                      child: Text(option.label),
-                    ),
-                ],
-              ),
-              IconButton(
-                tooltip: 'Profil & Ziele',
-                icon: const Icon(Icons.person),
-                onPressed: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => ProfileScreen(
-                        initialProfile: provider.userProfile,
-                        onSave: (profile) {
-                          provider.saveUserProfileAndRecalculateGoals(profile);
-                          Navigator.of(context).pop();
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
+            title: Text(
+              isToday
+                  ? 'Heute'
+                  : _headerDateFormat.format(provider.selectedDate),
+            ),
           ),
-          body: Stack(
-            children: [
-              CustomScrollView(
-                slivers: [
-                  // Date Navigation Header
-                  SliverToBoxAdapter(
-                    child: Card(
-                      margin: const EdgeInsets.all(16),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_back_ios_new),
-                              onPressed: () => _changeDate(-1),
-                            ),
-                            GestureDetector(
-                              onTap: _showDatePicker,
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.date_range, size: 20),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    DateFormat.yMMMMd(
-                                      'de_DE',
-                                    ).format(provider.selectedDate),
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.titleMedium,
-                                  ),
-                                ],
+          body: CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(
+                  Space.screenX,
+                  Space.sm,
+                  Space.screenX,
+                  96,
+                ),
+                sliver: SliverList(
+                  delegate: SliverChildListDelegate([
+                    Row(
+                      children: [
+                        IconButton(
+                          tooltip: 'Vorheriger Tag',
+                          icon: const Icon(Icons.chevron_left_rounded),
+                          onPressed: () => _changeDate(-1),
+                        ),
+                        Expanded(
+                          child: Center(
+                            child: TextButton(
+                              onPressed: _showDatePicker,
+                              child: Text(
+                                _shortDateFormat.format(provider.selectedDate),
+                                style: textTheme.titleMedium,
                               ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.arrow_forward_ios),
-                              onPressed: () => _changeDate(1),
-                            ),
-                          ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Nächster Tag',
+                          icon: const Icon(Icons.chevron_right_rounded),
+                          onPressed: isToday ? null : () => _changeDate(1),
+                        ),
+                      ],
+                    ),
+                    if (provider.isLoading) ...[
+                      const LinearProgressIndicator(),
+                      const SizedBox(height: Space.sm),
+                      Text(
+                        provider.loadingLabel ?? 'Lädt…',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
                         ),
                       ),
+                      const SizedBox(height: Space.md),
+                    ],
+                    GoalsSummaryCard(
+                      eatenCalories: provider.totalCalories,
+                      calorieBudget: provider.calorieBudget,
+                      burnedCalories: provider.totalBurned,
+                      activityAddedToBudget:
+                          provider.userProfile.eatBackActivityCalories,
+                      totalProtein: provider.totalProtein,
+                      totalCarbs: provider.totalCarbs,
+                      totalFat: provider.totalFat,
+                      goals: provider.goals,
+                      week: provider.weekStatus,
+                      onOpenHistory: widget.onOpenHistory,
                     ),
-                  ),
-
-                  // Goals Summary Card
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: GoalsSummaryCard(
-                        eatenCalories: provider.totalCalories,
-                        calorieBudget: provider.calorieBudget,
-                        burnedCalories: provider.totalBurned,
-                        activityAddedToBudget:
-                            provider.userProfile.eatBackActivityCalories,
-                        totalProtein: provider.totalProtein,
-                        totalCarbs: provider.totalCarbs,
-                        totalFat: provider.totalFat,
-                        goals: provider.goals,
-                        week: provider.weekStatus,
-                        onOpenHistory: widget.onOpenHistory,
+                    const SizedBox(height: Space.md),
+                    WeightCard(
+                      weightOnSelectedDate: provider.weightOnSelectedDate,
+                      averageThisWeek: provider.weightAverage7Days,
+                      averagePreviousWeek:
+                          provider.weightAveragePrevious7Days,
+                      lowerIsBetter:
+                          provider.userProfile.goal.calorieModifier == 0
+                          ? null
+                          : provider.userProfile.goal.isDeficit,
+                      onTap: _showWeightDialog,
+                    ),
+                    SectionHeader(
+                      'Mahlzeiten',
+                      trailing: Text(
+                        '${_thousands.format(provider.totalCalories)} kcal',
+                        style: trailingStyle,
                       ),
                     ),
-                  ),
-
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                      child: WeightCard(
-                        weightOnSelectedDate: provider.weightOnSelectedDate,
-                        averageThisWeek: provider.weightAverage7Days,
-                        averagePreviousWeek:
-                            provider.weightAveragePrevious7Days,
-                        lowerIsBetter:
-                            provider.userProfile.goal.calorieModifier == 0
-                            ? null
-                            : provider.userProfile.goal.isDeficit,
-                        onTap: _showWeightDialog,
-                      ),
-                    ),
-                  ),
-
-                  // Food Entries Section
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.restaurant, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Mahlzeiten',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '${provider.totalCalories} kcal',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  if (provider.foodEntries.isEmpty)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Center(
-                          child: Text('Noch keine Mahlzeiten hinzugefügt'),
+                    if (foodRows.isEmpty)
+                      const AppCard(
+                        child: EmptyState(
+                          icon: Icons.restaurant_outlined,
+                          title: 'Noch nichts gegessen',
+                          message:
+                              'Tippe auf „Eintrag“, um eine Mahlzeit hinzuzufügen.',
                         ),
-                      ),
-                    )
-                  else
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final food = provider.foodEntries[index];
-                        return FoodItemRow(
-                          food: food,
-                          onEdit: () => _showEditFoodDialog(food),
-                          onDelete: () => _showDeleteFoodDialog(food),
-                        );
-                      }, childCount: provider.foodEntries.length),
-                    ),
-
-                  // Activity Entries Section
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.directions_run, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Aktivitäten',
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '-${provider.totalBurned} kcal',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: AppColors.of(context).success,
-                                ),
-                          ),
-                        ],
+                      )
+                    else
+                      _entriesCard(foodRows),
+                    SectionHeader(
+                      'Aktivitäten',
+                      trailing: Text(
+                        '-${_thousands.format(provider.totalBurned)} kcal',
+                        style: trailingStyle,
                       ),
                     ),
-                  ),
-
-                  if (provider.activityEntries.isEmpty)
-                    const SliverToBoxAdapter(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Center(
-                          child: Text('Noch keine Aktivitäten hinzugefügt'),
+                    if (activityRows.isEmpty)
+                      const AppCard(
+                        child: EmptyState(
+                          icon: Icons.directions_run_outlined,
+                          title: 'Keine Aktivitäten',
+                          message:
+                              'Erfasste Bewegung erscheint hier und wird auf dein Tagesbudget angerechnet.',
                         ),
-                      ),
-                    )
-                  else
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate((context, index) {
-                        final activity = provider.activityEntries[index];
-                        return ActivityItemRow(
-                          activity: activity,
-                          onEdit: () => _showEditActivityDialog(activity),
-                          onDelete: () => _showDeleteActivityDialog(activity),
-                        );
-                      }, childCount: provider.activityEntries.length),
-                    ),
-
-                  // Bottom padding for FAB
-                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
-                ],
+                      )
+                    else
+                      _entriesCard(activityRows),
+                  ]),
+                ),
               ),
-
-              // Loading indicator
-              if (provider.isLoading)
-                Container(
-                  color: Colors.black26,
-                  child: const Center(child: CircularProgressIndicator()),
-                ),
-
-              // Error snackbar
-              if (provider.errorMessage != null)
-                Positioned(
-                  bottom: 100,
-                  left: 16,
-                  right: 16,
-                  child: Material(
-                    elevation: 6,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.errorContainer,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              provider.errorMessage!,
-                              style: TextStyle(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onErrorContainer,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: provider.dismissError,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
             ],
           ),
           floatingActionButton: FloatingActionButton.extended(
             heroTag: 'add_entry_fab',
-            onPressed: _showAddEntryDialog,
-            icon: const Icon(Icons.add),
+            onPressed: provider.isLoading ? null : _showAddEntryDialog,
+            icon: const Icon(Icons.add_rounded),
             label: const Text('Eintrag'),
           ),
         );

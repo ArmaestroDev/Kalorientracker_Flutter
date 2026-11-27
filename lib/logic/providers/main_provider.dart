@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show ThemeMode;
 import 'package:intl/intl.dart';
+import '../../data/models/ai_model_option.dart';
 import '../../data/models/food_entry.dart';
 import '../../data/models/activity_entry.dart';
 import '../../data/models/chat_message.dart';
@@ -17,6 +21,7 @@ import '../../data/services/gemini_api_service.dart';
 import '../../data/services/claude_api_service.dart';
 import '../../data/services/openai_compatible_service.dart';
 import '../../data/services/food_api_service.dart';
+import '../../data/services/model_catalog_service.dart';
 import '../../data/services/pdf_plan_extractor.dart';
 import '../assistant_context_builder.dart';
 import '../coach_tools.dart';
@@ -24,20 +29,24 @@ import '../history_data.dart';
 import '../nutrition_stats.dart';
 import '../goals_calculator.dart';
 import '../widget_bridge.dart';
+import '../../ui/theme/app_theme.dart';
 
 /// Main state provider for the Kalorientracker app
 class MainProvider extends ChangeNotifier {
   final LogRepository _logRepository;
   final UserPreferencesRepository _prefsRepository;
   final ApiServiceRepository _apiServiceRepository;
+  final ModelCatalogService _modelCatalogService;
 
   MainProvider({
     required LogRepository logRepository,
     required UserPreferencesRepository prefsRepository,
     required ApiServiceRepository apiServiceRepository,
+    ModelCatalogService? modelCatalogService,
   }) : _logRepository = logRepository,
        _prefsRepository = prefsRepository,
-       _apiServiceRepository = apiServiceRepository;
+       _apiServiceRepository = apiServiceRepository,
+       _modelCatalogService = modelCatalogService ?? ModelCatalogService();
 
   // State
   DateTime _selectedDate = _today();
@@ -53,9 +62,16 @@ class MainProvider extends ChangeNotifier {
   UserProfile _userProfile = const UserProfile();
   CalorieGoals _goals = const CalorieGoals();
   bool _isLoading = false;
+  bool _initialized = false;
   String? _errorMessage;
   FoodNutritionInfo? _scannedFoodInfo;
-  String _currentTheme = 'Default';
+  String _currentTheme = 'amethyst';
+  ThemeMode _themeMode = ThemeMode.system;
+  Map<AiProvider, List<AiModelOption>> _modelCatalog = {};
+  bool _modelsRefreshing = false;
+  final Map<AiProvider, String> _modelErrors = {};
+  String? _successMessage;
+  String? _loadingLabel;
   List<WeightEntry> _weightEntries = [];
   List<FoodEntry> _weekFoodEntries = [];
   List<ActivityEntry> _weekActivityEntries = [];
@@ -73,6 +89,7 @@ class MainProvider extends ChangeNotifier {
   UserProfile get userProfile => _userProfile;
   CalorieGoals get goals => _goals;
   bool get isLoading => _isLoading;
+  bool get initialized => _initialized;
   String? get errorMessage => _errorMessage;
   FoodNutritionInfo? get scannedFoodInfo => _scannedFoodInfo;
   String get currentTheme => _currentTheme;
@@ -82,6 +99,29 @@ class MainProvider extends ChangeNotifier {
       List.unmodifiable(_assistantMessages);
   bool get assistantBusy => _assistantBusy;
   String? get assistantStatus => _assistantStatus;
+  ThemeMode get themeMode => _themeMode;
+  bool get modelsRefreshing => _modelsRefreshing;
+  String? modelErrorFor(AiProvider provider) => _modelErrors[provider];
+  String? get successMessage => _successMessage;
+  String? get loadingLabel => _loadingLabel;
+
+  List<AiModelOption> modelsFor(AiProvider provider) {
+    final cached = _modelCatalog[provider];
+    final options = cached != null && cached.isNotEmpty
+        ? List<AiModelOption>.of(cached)
+        : List<AiModelOption>.of(ModelCatalogService.fallback[provider]!);
+    final selectedId = _userProfile.modelFor(provider);
+    if (!options.any((o) => o.id == selectedId)) {
+      options.add(
+        AiModelOption(
+          id: selectedId,
+          label: '$selectedId (eigenes)',
+          free: !provider.requiresPaidKey,
+        ),
+      );
+    }
+    return options;
+  }
 
   /// Increments whenever logged data may have changed, so screens can reload
   int get dataVersion => _dataVersion;
@@ -93,7 +133,6 @@ class MainProvider extends ChangeNotifier {
   int get totalFat => _foodEntries.fold(0, (sum, e) => sum + e.fat);
   int get totalBurned =>
       _activityEntries.fold(0, (sum, e) => sum + e.caloriesBurned);
-  int get netCalories => totalCalories - totalBurned;
 
   /// Daily budget. Logged activities are only added when the user opted in,
   /// because the activity level multiplier already includes regular training.
@@ -101,8 +140,6 @@ class MainProvider extends ChangeNotifier {
 
   int _budgetFor(int burned) =>
       _goals.calories + (_userProfile.eatBackActivityCalories ? burned : 0);
-
-  int get remainingCalories => calorieBudget - totalCalories;
 
   DateTime get weekStart => startOfWeek(_selectedDate);
 
@@ -163,17 +200,23 @@ class MainProvider extends ChangeNotifier {
         await _prefsRepository.saveCalorieGoals(_goals);
       }
       _currentTheme = await _prefsRepository.loadTheme();
+      _themeMode = AppTheme.themeModeFrom(
+        await _prefsRepository.loadThemeMode(),
+      );
+      _modelCatalog = await _prefsRepository.loadModelCatalog();
       _assistantMessages = await _prefsRepository.loadChatHistory();
       _plans = await _logRepository.getPlans();
       _initializeApiService(_userProfile);
       await _loadEntriesForDate(_selectedDate);
       await _syncHomeWidget();
     } catch (e) {
-      _errorMessage = 'Fehler beim Laden der Daten: $e';
+      _errorMessage = _errorText(e);
     }
 
+    _initialized = true;
     _isLoading = false;
     notifyListeners();
+    unawaited(refreshModelCatalog());
   }
 
   /// Advances [_selectedDate] to the new day when the app resumes past midnight
@@ -222,10 +265,15 @@ class MainProvider extends ChangeNotifier {
   }
 
   /// Runs an AI call behind the loading overlay and reports errors in the banner
-  Future<bool> _runAiTask(Future<void> Function(DateTime targetDate) task) async {
+  Future<bool> _runAiTask(
+    Future<void> Function(DateTime targetDate) task, {
+    String label = 'KI schätzt Nährwerte…',
+    String? success,
+  }) async {
     if (_isApiKeyMissing()) return false;
     final targetDate = _selectedDate;
     _isLoading = true;
+    _loadingLabel = label;
     _errorMessage = null;
     notifyListeners();
     var ok = false;
@@ -233,11 +281,13 @@ class MainProvider extends ChangeNotifier {
       await task(targetDate);
       await _loadEntriesForDate(_selectedDate);
       await _syncHomeWidget();
+      if (success != null) _successMessage = success;
       ok = true;
     } catch (e) {
       _errorMessage = _errorText(e);
     }
     _isLoading = false;
+    _loadingLabel = null;
     notifyListeners();
     return ok;
   }
@@ -304,9 +354,10 @@ class MainProvider extends ChangeNotifier {
       await _loadEntriesForDate(_selectedDate);
       await _syncProfileWeightToAverage(modifiedDate: date);
       await _syncHomeWidget();
+      _successMessage = 'Gewicht gespeichert';
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Gewicht konnte nicht gespeichert werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -320,7 +371,7 @@ class MainProvider extends ChangeNotifier {
       await _syncHomeWidget();
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Gewicht konnte nicht gelöscht werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -357,7 +408,7 @@ class MainProvider extends ChangeNotifier {
     try {
       await _loadEntriesForDate(_selectedDate);
     } catch (e) {
-      _errorMessage = 'Einträge konnten nicht geladen werden: $e';
+      _errorMessage = _errorText(e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -455,17 +506,6 @@ class MainProvider extends ChangeNotifier {
     );
   }
 
-  /// Add a food item using AI to estimate nutrition
-  Future<bool> addFoodItem(String foodName, String description) {
-    return _runAiTask((targetDate) async {
-      final info = await _apiServiceRepository.fetchFoodNutrition(
-        foodName,
-        description,
-      );
-      await _addFoodEntryFromInfo(info, date: targetDate);
-    });
-  }
-
   /// Fetch food info by barcode
   Future<bool> fetchFoodInfoByBarcode(String code) async {
     _isLoading = true;
@@ -533,9 +573,10 @@ class MainProvider extends ChangeNotifier {
       await _logRepository.addFoodEntry(newEntry);
       await _loadEntriesForDate(_selectedDate);
       await _syncHomeWidget();
+      _successMessage = 'Produkt hinzugefügt';
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Gescanntes Produkt konnte nicht gespeichert werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -567,9 +608,10 @@ class MainProvider extends ChangeNotifier {
       );
       await _loadEntriesForDate(_selectedDate);
       await _syncHomeWidget();
+      _successMessage = 'Mahlzeit hinzugefügt';
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Eintrag konnte nicht gespeichert werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -596,7 +638,7 @@ class MainProvider extends ChangeNotifier {
     try {
       await _logRepository.deleteFoodItem(id);
     } catch (e) {
-      _errorMessage = 'Verlaufseintrag konnte nicht gelöscht werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -606,88 +648,96 @@ class MainProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Add an activity using AI to estimate calories burned
-  Future<bool> addActivityItem(String activityName) {
-    return _runAiTask((targetDate) async {
-      final info = await _apiServiceRepository.fetchActivityCalories(
-        activityName,
-        _bodyWeightForEstimates,
-      );
-      await _addActivityEntryFromInfo(info, date: targetDate);
-    });
-  }
-
   /// Add unified entry - AI classifies as food or activity automatically
   Future<bool> addUnifiedEntry(String input, String description) {
-    return _runAiTask((targetDate) async {
-      final entry = await _apiServiceRepository.classifyAndProcess(
-        input,
-        description,
-        _bodyWeightForEstimates,
-      );
-      if (entry.isFood) {
-        await _addFoodEntryFromInfo(entry.foodInfo!, date: targetDate);
-      } else {
-        await _addActivityEntryFromInfo(entry.activityInfo!, date: targetDate);
-      }
-    });
+    return _runAiTask(
+      (targetDate) async {
+        final entry = await _apiServiceRepository.classifyAndProcess(
+          input,
+          description,
+          _bodyWeightForEstimates,
+        );
+        if (entry.isFood) {
+          await _addFoodEntryFromInfo(entry.foodInfo!, date: targetDate);
+        } else {
+          await _addActivityEntryFromInfo(
+            entry.activityInfo!,
+            date: targetDate,
+          );
+        }
+      },
+      label: 'KI analysiert Eintrag…',
+      success: 'Eintrag hinzugefügt',
+    );
   }
 
   /// Add food from image using AI estimation
   Future<bool> addFoodFromImage(Uint8List imageBytes, String? description) {
-    return _runAiTask((targetDate) async {
-      final info = await _apiServiceRepository.estimateFoodFromImage(
-        imageBytes,
-        description,
-      );
-      await _addFoodEntryFromInfo(info, date: targetDate);
-    });
+    return _runAiTask(
+      (targetDate) async {
+        final info = await _apiServiceRepository.estimateFoodFromImage(
+          imageBytes,
+          description,
+        );
+        await _addFoodEntryFromInfo(info, date: targetDate);
+      },
+      label: 'KI analysiert Foto…',
+      success: 'Mahlzeit aus Foto hinzugefügt',
+    );
   }
 
   /// Re-estimate a food entry with AI, using the (possibly edited) name and
   /// amount from the edit dialog
   Future<bool> reFetchFoodItem(FoodEntry foodEntry) {
-    return _runAiTask((_) async {
-      final amount =
-          foodEntry.amount != null &&
-              foodEntry.unit != null &&
-              foodEntry.unit!.isNotEmpty
-          ? '${_formatAmount(foodEntry.amount!)} ${foodEntry.unit}'
-          : '';
-      final info = await _apiServiceRepository.fetchFoodNutrition(
-        amount.isEmpty ? foodEntry.name : '$amount ${foodEntry.name}',
-        '',
-      );
-      final historyId = await _saveFoodItemToHistory(info);
-      await _logRepository.updateFoodEntry(
-        foodEntry.copyWith(
-          name: info.name,
-          calories: info.calories,
-          protein: info.protein.round(),
-          carbs: info.carbs.round(),
-          fat: info.fat.round(),
-          amount: info.amount ?? foodEntry.amount,
-          unit: info.amount != null ? info.unit : foodEntry.unit,
-          foodItemId: historyId,
-        ),
-      );
-    });
+    return _runAiTask(
+      (_) async {
+        final amount =
+            foodEntry.amount != null &&
+                foodEntry.unit != null &&
+                foodEntry.unit!.isNotEmpty
+            ? '${_formatAmount(foodEntry.amount!)} ${foodEntry.unit}'
+            : '';
+        final info = await _apiServiceRepository.fetchFoodNutrition(
+          amount.isEmpty ? foodEntry.name : '$amount ${foodEntry.name}',
+          '',
+        );
+        final historyId = await _saveFoodItemToHistory(info);
+        await _logRepository.updateFoodEntry(
+          foodEntry.copyWith(
+            name: info.name,
+            calories: info.calories,
+            protein: info.protein.round(),
+            carbs: info.carbs.round(),
+            fat: info.fat.round(),
+            amount: info.amount ?? foodEntry.amount,
+            unit: info.amount != null ? info.unit : foodEntry.unit,
+            foodItemId: historyId,
+          ),
+        );
+      },
+      label: 'KI schätzt neu…',
+      success: 'Neu berechnet',
+    );
   }
 
   /// Re-estimate an activity entry with AI, using the edited name
   Future<bool> reFetchActivityItem(ActivityEntry activityEntry) {
-    return _runAiTask((_) async {
-      final info = await _apiServiceRepository.fetchActivityCalories(
-        activityEntry.name,
-        _bodyWeightForEstimates,
-      );
-      await _logRepository.updateActivityEntry(
-        activityEntry.copyWith(
-          name: info.name,
-          caloriesBurned: info.caloriesBurned,
-        ),
-      );
-    });
+    return _runAiTask(
+      (_) async {
+        final info = await _apiServiceRepository.fetchActivityCalories(
+          activityEntry.name,
+          _bodyWeightForEstimates,
+        );
+        await _logRepository.updateActivityEntry(
+          activityEntry.copyWith(
+            name: info.name,
+            caloriesBurned: info.caloriesBurned,
+          ),
+        );
+      },
+      label: 'KI schätzt neu…',
+      success: 'Neu berechnet',
+    );
   }
 
   static String _formatAmount(double amount) => amount == amount.roundToDouble()
@@ -702,7 +752,7 @@ class MainProvider extends ChangeNotifier {
       await _syncHomeWidget();
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Eintrag konnte nicht aktualisiert werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -715,7 +765,7 @@ class MainProvider extends ChangeNotifier {
       await _syncHomeWidget();
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Aktivität konnte nicht aktualisiert werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -726,9 +776,10 @@ class MainProvider extends ChangeNotifier {
       await _logRepository.deleteFoodEntry(foodEntry);
       await _loadEntriesForDate(_selectedDate);
       await _syncHomeWidget();
+      _successMessage = 'Eintrag gelöscht';
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Eintrag konnte nicht gelöscht werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -739,9 +790,10 @@ class MainProvider extends ChangeNotifier {
       await _logRepository.deleteActivityEntry(activityEntry);
       await _loadEntriesForDate(_selectedDate);
       await _syncHomeWidget();
+      _successMessage = 'Eintrag gelöscht';
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Aktivität konnte nicht gelöscht werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -772,9 +824,10 @@ class MainProvider extends ChangeNotifier {
     try {
       await _logRepository.savePlan(plan.copyWith(updatedAt: DateTime.now()));
       _plans = await _logRepository.getPlans();
+      _successMessage = 'Plan gespeichert';
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Plan konnte nicht gespeichert werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
@@ -787,15 +840,26 @@ class MainProvider extends ChangeNotifier {
     try {
       await _logRepository.deletePlan(id);
       _plans = await _logRepository.getPlans();
+      _successMessage = 'Plan gelöscht';
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Plan konnte nicht gelöscht werden: $e';
+      _errorMessage = _errorText(e);
       notifyListeners();
     }
   }
 
   /// Save user profile and recalculate goals
-  Future<void> saveUserProfileAndRecalculateGoals(UserProfile profile) async {
+  Future<void> saveUserProfileAndRecalculateGoals(
+    UserProfile profile, {
+    String successMessage = 'Profil gespeichert',
+  }) async {
+    final oldProfile = _userProfile;
+    final keysChanged =
+        oldProfile.geminiApiKey != profile.geminiApiKey ||
+        oldProfile.claudeApiKey != profile.claudeApiKey ||
+        oldProfile.openaiApiKey != profile.openaiApiKey ||
+        oldProfile.grokApiKey != profile.grokApiKey;
+
     _initializeApiService(profile);
     final newGoals = GoalsCalculator.calculateGoals(profile);
 
@@ -807,14 +871,92 @@ class MainProvider extends ChangeNotifier {
     if (_errorMessage != null && missingApiKeyMessage == null) {
       _errorMessage = null;
     }
+    _successMessage = successMessage;
     await _syncHomeWidget();
     notifyListeners();
+    if (keysChanged) unawaited(refreshModelCatalog());
   }
 
   /// Change app theme
   Future<void> changeTheme(String themeName) async {
     _currentTheme = themeName;
     await _prefsRepository.saveTheme(themeName);
+    notifyListeners();
+  }
+
+  Future<void> changeThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    await _prefsRepository.saveThemeMode(AppTheme.themeModeKey(mode));
+    notifyListeners();
+  }
+
+  Future<void> selectModel(AiProvider provider, String modelId) async {
+    final overrides = Map<AiProvider, String>.of(_userProfile.modelOverrides);
+    overrides[provider] = modelId;
+    await saveUserProfileAndRecalculateGoals(
+      _userProfile.copyWith(modelOverrides: overrides),
+      successMessage: 'Modell gewechselt: $modelId',
+    );
+  }
+
+  Future<void> refreshModelCatalog() async {
+    if (_modelsRefreshing) return;
+    _modelsRefreshing = true;
+    notifyListeners();
+
+    try {
+      for (final provider in AiProvider.values) {
+        final key = _userProfile.apiKeyFor(provider).trim();
+        if (key.isEmpty) continue;
+        try {
+          _modelCatalog[provider] = await _modelCatalogService.fetch(
+            provider,
+            key,
+          );
+          _modelErrors.remove(provider);
+        } catch (e) {
+          _modelErrors[provider] = _errorText(e);
+        }
+      }
+
+      _modelCatalog = Map<AiProvider, List<AiModelOption>>.of(_modelCatalog);
+      await _prefsRepository.saveModelCatalog(_modelCatalog);
+
+      final provider = _userProfile.selectedProvider;
+      final models = _modelCatalog[provider];
+      if (models != null &&
+          models.isNotEmpty &&
+          !models.any((m) => m.id == _userProfile.modelFor(provider))) {
+        final overrides = Map<AiProvider, String>.of(
+          _userProfile.modelOverrides,
+        );
+        overrides[provider] = models.first.id;
+        final profile = _userProfile.copyWith(modelOverrides: overrides);
+        await _prefsRepository.saveUserProfile(profile);
+        _userProfile = profile;
+        _initializeApiService(_userProfile);
+      }
+    } catch (e) {
+      _modelErrors[_userProfile.selectedProvider] = _errorText(e);
+    } finally {
+      _modelsRefreshing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<String?> testConnection() async {
+    final keyMessage = missingApiKeyMessage;
+    if (keyMessage != null) return keyMessage;
+    try {
+      await _apiServiceRepository.ping();
+      return null;
+    } catch (e) {
+      return _errorText(e);
+    }
+  }
+
+  void clearSuccess() {
+    _successMessage = null;
     notifyListeners();
   }
 
@@ -906,11 +1048,11 @@ class MainProvider extends ChangeNotifier {
           isError: true,
         ),
       ];
+    } finally {
+      _assistantBusy = false;
+      _assistantStatus = null;
+      notifyListeners();
     }
-
-    _assistantBusy = false;
-    _assistantStatus = null;
-    notifyListeners();
   }
 
   CoachTools _coachTools({VoidCallback? onMutate}) => CoachTools(
@@ -1027,5 +1169,11 @@ class MainProvider extends ChangeNotifier {
     _assistantMessages = [];
     await _prefsRepository.saveChatHistory(_assistantMessages);
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _modelCatalogService.close();
+    super.dispose();
   }
 }

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+
 import '../../../data/services/food_api_service.dart';
 import '../../../logic/number_format.dart';
+import '../../theme/tokens.dart';
 import '../app_text_field.dart';
+import '../kit/kit.dart';
 
 class BarcodeScannerResultDialog extends StatefulWidget {
   final FoodNutritionInfo foodInfo;
@@ -23,6 +26,7 @@ class BarcodeScannerResultDialog extends StatefulWidget {
 class _BarcodeScannerResultDialogState
     extends State<BarcodeScannerResultDialog> {
   final _gramsController = TextEditingController(text: '100');
+  String? _error;
 
   @override
   void dispose() {
@@ -40,13 +44,19 @@ class _BarcodeScannerResultDialogState
   double get _factor => (_grams ?? 0) / 100.0;
 
   void _confirm() {
-    if (_grams == null) return;
-    widget.onConfirm(_grams!);
+    final grams = _grams;
+    if (grams == null) {
+      setState(() => _error = 'Bitte eine gültige Zahl eingeben');
+      return;
+    }
+    widget.onConfirm(grams);
     Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final kcal100 =
         widget.foodInfo.caloriesPer100g ?? widget.foodInfo.calories.toDouble();
     final p100 = widget.foodInfo.proteinPer100g ?? widget.foodInfo.protein;
@@ -58,57 +68,74 @@ class _BarcodeScannerResultDialogState
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Nährwerte pro 100 $_unit:',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Nährwerte pro 100 $_unit',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: Space.sm),
+                  _NutrientRow(
+                    label: 'Kalorien',
+                    value: '${formatLocalizedNumber(kcal100)} kcal',
+                  ),
+                  _NutrientRow(
+                    label: 'Protein',
+                    value: '${formatLocalizedNumber(p100)} g',
+                  ),
+                  _NutrientRow(
+                    label: 'Kohlenhydrate',
+                    value: '${formatLocalizedNumber(c100)} g',
+                  ),
+                  _NutrientRow(
+                    label: 'Fett',
+                    value: '${formatLocalizedNumber(f100)} g',
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 8),
-            Text('Kalorien: ${formatLocalizedNumber(kcal100)} kcal'),
-            Text('Protein: ${formatLocalizedNumber(p100)} g'),
-            Text('Kohlenhydrate: ${formatLocalizedNumber(c100)} g'),
-            Text('Fett: ${formatLocalizedNumber(f100)} g'),
-            const SizedBox(height: 16),
+            const SizedBox(height: Space.md),
             AppTextField.number(
               controller: _gramsController,
               label: 'Menge',
               suffix: _unit,
               autofocus: true,
-              onChanged: (_) => setState(() {}),
+              errorText: _error,
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
               onSubmitted: (_) => _confirm(),
             ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Für ${_grams ?? 0} $_unit:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+            if (_grams != null) ...[
+              const SizedBox(height: Space.md),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Für ${_grams ?? 0} $_unit',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '${(kcal100 * _factor).round()} kcal · '
-                    'P ${(p100 * _factor).round()} g · '
-                    'K ${(c100 * _factor).round()} g · '
-                    'F ${(f100 * _factor).round()} g',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    const SizedBox(height: Space.xs),
+                    Text(
+                      '${(kcal100 * _factor).round()} kcal · '
+                      'P ${(p100 * _factor).round()} g · '
+                      'K ${(c100 * _factor).round()} g · '
+                      'F ${(f100 * _factor).round()} g',
+                      style: theme.textTheme.titleMedium,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -120,11 +147,35 @@ class _BarcodeScannerResultDialogState
           },
           child: const Text('Abbrechen'),
         ),
-        FilledButton(
-          onPressed: _grams == null ? null : _confirm,
-          child: const Text('Hinzufügen'),
-        ),
+        FilledButton(onPressed: _confirm, child: const Text('Hinzufügen')),
       ],
+    );
+  }
+}
+
+class _NutrientRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _NutrientRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Space.xxs),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          Text(value, style: theme.textTheme.bodyMedium),
+        ],
+      ),
     );
   }
 }

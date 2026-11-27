@@ -7,7 +7,9 @@ import '../../logic/history_data.dart';
 import '../../logic/nutrition_stats.dart';
 import '../../logic/providers/main_provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/tokens.dart';
 import '../widgets/goals_summary_card.dart';
+import '../widgets/kit/kit.dart';
 
 final _thousands = NumberFormat.decimalPattern('de_DE');
 
@@ -70,7 +72,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
         builder: (context, snapshot) {
           final data = snapshot.data;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+            padding: const EdgeInsets.fromLTRB(
+              Space.screenX,
+              Space.sm,
+              Space.screenX,
+              Space.xxl,
+            ),
             children: [
               SegmentedButton<HistoryRange>(
                 showSelectedIcon: false,
@@ -81,32 +88,43 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 selected: {_range},
                 onSelectionChanged: (s) => setState(() => _range = s.first),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: Space.lg),
               if (snapshot.hasError)
-                Text('Fehler beim Laden: ${snapshot.error}')
+                Notice(
+                  tone: NoticeTone.error,
+                  message: 'Fehler beim Laden: ${snapshot.error}',
+                )
               else if (data == null)
                 const Padding(
-                  padding: EdgeInsets.all(48),
-                  child: Center(child: CircularProgressIndicator()),
+                  padding: EdgeInsets.symmetric(vertical: Space.xxl),
+                  child: LoadingState(label: 'Verlauf wird geladen …'),
                 )
               else if (data.goals.calories <= 0)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      'Trage im Profil Alter, Gewicht und Größe ein, damit Ziele und Wochenbudget berechnet werden können.',
-                    ),
+                AppCard(
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: Space.md),
+                      const Expanded(
+                        child: Text(
+                          'Trage im Profil Alter, Gewicht und Größe ein, damit Ziele und Wochenbudget berechnet werden können.',
+                        ),
+                      ),
+                    ],
                   ),
                 )
               else ...[
                 _StatTiles(data: data),
-                const SizedBox(height: 16),
+                const SizedBox(height: Space.md),
                 _CaloriesChartCard(data: data),
-                const SizedBox(height: 16),
+                const SizedBox(height: Space.md),
                 _MacroCard(data: data),
-                const SizedBox(height: 16),
+                const SizedBox(height: Space.md),
                 _WeightChartCard(data: data),
-                const SizedBox(height: 16),
+                const SizedBox(height: Space.md),
                 _PeriodList(data: data, onOpenDay: widget.onOpenDay),
               ],
             ],
@@ -159,10 +177,10 @@ class _StatTiles extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = (constraints.maxWidth - 12) / 2;
+        final width = (constraints.maxWidth - Space.md) / 2;
         return Wrap(
-          spacing: 12,
-          runSpacing: 12,
+          spacing: Space.md,
+          runSpacing: Space.md,
           children: [
             for (final tile in tiles) SizedBox(width: width, child: tile),
           ],
@@ -189,40 +207,37 @@ class _StatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
     final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: textTheme.labelMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: textTheme.labelMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: Space.xs),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: valueColor ?? colorScheme.onSurface,
               ),
             ),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                value,
-                style: textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: valueColor ?? colorScheme.onSurface,
-                ),
-              ),
+          ),
+          const SizedBox(height: Space.xxs),
+          Text(
+            detail,
+            style: textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
             ),
-            const SizedBox(height: 2),
-            Text(
-              detail,
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-              maxLines: 2,
-            ),
-          ],
-        ),
+            maxLines: 2,
+          ),
+        ],
       ),
     );
   }
@@ -243,31 +258,27 @@ class _ChartCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+    final theme = Theme.of(context);
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
-            Text(
-              subtitle,
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
+          ),
+          Text(
+            subtitle,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
             ),
-            if (legend != null) ...[const SizedBox(height: 8), legend!],
-            const SizedBox(height: 16),
-            child,
-          ],
-        ),
+          ),
+          if (legend != null) ...[const SizedBox(height: Space.sm), legend!],
+          const SizedBox(height: Space.lg),
+          child,
+        ],
       ),
     );
   }
@@ -290,14 +301,14 @@ class _LegendKey extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: isLine ? 16 : 10,
-          height: isLine ? 2 : 10,
+          width: isLine ? Space.lg : Space.sm,
+          height: isLine ? Stroke.emphasis : Space.sm,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(isLine ? 1 : 5),
+            borderRadius: BorderRadius.circular(Corner.full),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: Space.sm),
         Text(label, style: Theme.of(context).textTheme.bodySmall),
       ],
     );
@@ -396,10 +407,10 @@ class _CaloriesChartCard extends StatelessWidget {
                           toY: valueOf(buckets[i]),
                           width: barWidth,
                           color: isRunning(buckets[i])
-                              ? colorScheme.primary.withValues(alpha: 0.55)
+                              ? colorScheme.primaryContainer
                               : colorScheme.primary,
                           borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(4),
+                            top: Radius.circular(Corner.xs),
                           ),
                         ),
                       ],
@@ -409,12 +420,13 @@ class _CaloriesChartCard extends StatelessWidget {
                   horizontalLines: [
                     HorizontalLine(
                       y: goalLine,
-                      color: colorScheme.onSurfaceVariant,
-                      strokeWidth: 1.5,
+                      color: colorScheme.outline,
+                      strokeWidth: Stroke.selectable,
+                      dashArray: const [6, 4],
                       label: HorizontalLineLabel(
                         show: true,
                         alignment: Alignment.topRight,
-                        padding: const EdgeInsets.only(bottom: 2),
+                        padding: const EdgeInsets.only(bottom: Space.xxs),
                         style: textTheme.labelSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -427,8 +439,8 @@ class _CaloriesChartCard extends StatelessWidget {
                   drawVerticalLine: false,
                   horizontalInterval: step,
                   getDrawingHorizontalLine: (_) => FlLine(
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-                    strokeWidth: 1,
+                    color: colorScheme.outlineVariant,
+                    strokeWidth: Stroke.hairline,
                   ),
                 ),
                 borderData: FlBorderData(show: false),
@@ -521,10 +533,9 @@ class _MacroCard extends StatelessWidget {
               current: total.avgProteinPerLoggedDay.round(),
               goal: data.goals.proteinGrams,
               color: colors.protein,
-              isMinimum: true,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: Space.md),
           Expanded(
             child: MacroProgress(
               name: 'Kohlenh.',
@@ -533,7 +544,7 @@ class _MacroCard extends StatelessWidget {
               color: colors.carbs,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: Space.md),
           Expanded(
             child: MacroProgress(
               name: 'Fett',
@@ -590,7 +601,7 @@ class _WeightChartCard extends StatelessWidget {
           ? 'Ø-Trend im Zeitraum: ${change > 0 ? '+' : ''}${change.toStringAsFixed(1).replaceAll('.', ',')} kg'
           : 'Ein Eintrag im Zeitraum',
       legend: Wrap(
-        spacing: 16,
+        spacing: Space.lg,
         children: [
           _LegendKey(
             color: colorScheme.primary,
@@ -612,20 +623,20 @@ class _WeightChartCard extends StatelessWidget {
               LineChartBarData(
                 spots: [for (final w in weights) FlSpot(x(w.date), w.weightKg)],
                 barWidth: 0,
-                color: Colors.transparent,
+                color: colorScheme.surface,
                 dotData: FlDotData(
                   getDotPainter: (spot, percent, bar, index) =>
                       FlDotCirclePainter(
                         radius: denseDots ? 2 : 4,
-                        color: muted.withValues(alpha: denseDots ? 0.6 : 1),
+                        color: denseDots ? colorScheme.outline : muted,
                         strokeWidth: denseDots ? 0 : 2,
-                        strokeColor: colorScheme.surfaceContainerLow,
+                        strokeColor: colorScheme.surfaceContainerLowest,
                       ),
                 ),
               ),
               LineChartBarData(
                 spots: [for (final t in trend) FlSpot(x(t.date), t.average)],
-                barWidth: 2,
+                barWidth: Stroke.emphasis,
                 isStrokeCapRound: true,
                 color: colorScheme.primary,
                 dotData: const FlDotData(show: false),
@@ -638,8 +649,8 @@ class _WeightChartCard extends StatelessWidget {
                 ((maxY - minY) / 4).ceilToDouble(),
               ),
               getDrawingHorizontalLine: (_) => FlLine(
-                color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-                strokeWidth: 1,
+                color: colorScheme.outlineVariant,
+                strokeWidth: Stroke.hairline,
               ),
             ),
             borderData: FlBorderData(show: false),
@@ -727,22 +738,22 @@ class _PeriodList extends StatelessWidget {
       HistoryRange.months12 => DateFormat('MMMM y', 'de_DE').format(p.start),
     };
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    return AppCard(
+      padding: EdgeInsets.zero,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text(
-              switch (range) {
-                HistoryRange.days14 => 'Tage',
-                HistoryRange.weeks12 => 'Wochen',
-                HistoryRange.months12 => 'Monate',
-              },
-              style: textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+          SectionHeader(
+            switch (range) {
+              HistoryRange.days14 => 'Tage',
+              HistoryRange.weeks12 => 'Wochen',
+              HistoryRange.months12 => 'Monate',
+            },
+            padding: const EdgeInsets.fromLTRB(
+              Space.lg,
+              Space.lg,
+              Space.lg,
+              Space.xs,
             ),
           ),
           for (final p in rows)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../theme/tokens.dart';
 
 const List<BarcodeFormat> retailBarcodeFormats = [
   BarcodeFormat.ean13,
@@ -70,8 +71,8 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
               builder: (context, state, child) {
                 return Icon(
                   state.torchState == TorchState.on
-                      ? Icons.flash_on
-                      : Icons.flash_off,
+                      ? Icons.flashlight_on_outlined
+                      : Icons.flashlight_off_outlined,
                 );
               },
             ),
@@ -79,7 +80,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
           ),
           IconButton(
             tooltip: 'Kamera wechseln',
-            icon: const Icon(Icons.cameraswitch),
+            icon: const Icon(Icons.cameraswitch_outlined),
             onPressed: () => _controller.switchCamera(),
           ),
         ],
@@ -107,8 +108,8 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                 onDetect: _onBarcodeDetected,
                 errorBuilder: (context, error, _) {
                   return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
+                                            child: Padding(
+                      padding: const EdgeInsets.all(Space.xl),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -117,7 +118,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                             size: 48,
                             color: Theme.of(context).colorScheme.error,
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: Space.md),
                           Text(
                             error.errorCode ==
                                     MobileScannerErrorCode.permissionDenied
@@ -137,38 +138,42 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                   decoration: BoxDecoration(
                     border: Border.all(
                       color: Theme.of(context).colorScheme.primary,
-                      width: 3,
+                      width: Stroke.emphasis,
                     ),
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(Corner.lg),
                   ),
                 ),
               ),
               Positioned(
-                bottom: hasPhotoActions ? 28 : 48,
-                left: 16,
-                right: 16,
+                bottom: hasPhotoActions ? Space.xxl : Space.xxl + Space.lg,
+                left: Space.screenX,
+                right: Space.screenX,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
+                        horizontal: Space.lg,
+                        vertical: Space.sm,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(20),
+                        color: Theme.of(context).colorScheme.inverseSurface,
+                        borderRadius: BorderRadius.circular(Corner.full),
                       ),
                       child: Text(
                         hasPhotoActions
                             ? 'Barcode wird automatisch erkannt – sonst Foto aufnehmen'
                             : 'Richte die Kamera auf den Barcode',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onInverseSurface,
+                        ),
                       ),
                     ),
                     if (hasPhotoActions) ...[
-                      const SizedBox(height: 16),
+                      const SizedBox(height: Space.lg),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -176,17 +181,17 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
                             FilledButton.tonalIcon(
                               onPressed: () =>
                                   _switchToPhoto(widget.onPickGallery!),
-                              icon: const Icon(Icons.photo_library),
+                              icon: const Icon(Icons.photo_library_outlined),
                               label: const Text('Galerie'),
                             ),
                           if (widget.onPickGallery != null &&
                               widget.onTakePhoto != null)
-                            const SizedBox(width: 12),
+                            const SizedBox(width: Space.md),
                           if (widget.onTakePhoto != null)
                             FilledButton.icon(
                               onPressed: () =>
                                   _switchToPhoto(widget.onTakePhoto!),
-                              icon: const Icon(Icons.camera_alt),
+                              icon: const Icon(Icons.photo_camera_outlined),
                               label: const Text('Foto aufnehmen'),
                             ),
                         ],

@@ -112,7 +112,6 @@ class WeekStatus {
       .fold(0, (s, d) => s + d.calories);
 
   int get budget => week._budgetFor(_countedDays);
-  int get fullWeekBudget => week.budget;
   int get remaining => budget - consumed;
 
   /// Days left in the week including the reference day (DST-safe)

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../theme/app_theme.dart';
+import '../theme/tokens.dart';
+import 'kit/kit.dart';
 
 class WeightCard extends StatelessWidget {
   final double? weightOnSelectedDate;
@@ -26,6 +29,7 @@ class WeightCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final appColors = AppColors.of(context);
 
     final average = averageThisWeek;
     final previous = averagePreviousWeek;
@@ -36,62 +40,69 @@ class WeightCard extends StatelessWidget {
         ? null
         : (rawChange * 10).round() / 10;
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Icon(Icons.monitor_weight_outlined, color: colorScheme.primary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      weightOnSelectedDate != null
-                          ? _kg(weightOnSelectedDate!)
-                          : 'Gewicht eintragen',
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (average != null)
-                      Text(
-                        'Ø 7 Tage: ${_kg(average)}',
-                        style: textTheme.bodySmall,
-                      ),
-                  ],
-                ),
-              ),
-              if (roundedChange != null)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${roundedChange > 0 ? '+' : ''}${roundedChange.toStringAsFixed(1).replaceAll('.', ',')} kg',
-                      style: textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: lowerIsBetter == null || roundedChange == 0
-                            ? colorScheme.onSurface
-                            : (roundedChange < 0) == lowerIsBetter
-                            ? AppColors.of(context).success
-                            : AppColors.of(context).danger,
-                      ),
-                    ),
-                    Text('ggü. Vorwoche', style: textTheme.labelSmall),
-                  ],
-                )
-              else
-                Icon(
-                  weightOnSelectedDate != null ? Icons.edit_outlined : Icons.add,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-            ],
+    var trendColor = colorScheme.onSurfaceVariant;
+    if (roundedChange != null &&
+        roundedChange != 0 &&
+        lowerIsBetter != null) {
+      trendColor = (roundedChange < 0) == lowerIsBetter
+          ? appColors.success
+          : appColors.danger;
+    }
+
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colorScheme.secondaryContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.monitor_weight_outlined,
+              size: 20,
+              color: colorScheme.onSecondaryContainer,
+            ),
           ),
-        ),
+          const SizedBox(width: Space.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Gewicht', style: textTheme.titleMedium),
+                const SizedBox(height: Space.xxs),
+                Text(
+                  weightOnSelectedDate != null
+                      ? _kg(weightOnSelectedDate!)
+                      : 'Noch nicht eingetragen',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (roundedChange != null) ...[
+            const SizedBox(width: Space.md),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${roundedChange > 0 ? '+' : ''}${roundedChange.toStringAsFixed(1).replaceAll('.', ',')} kg',
+                  style: textTheme.titleSmall?.copyWith(color: trendColor),
+                ),
+                Text(
+                  'ggü. Vorwoche',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

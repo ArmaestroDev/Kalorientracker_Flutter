@@ -2,17 +2,17 @@
 
 ## Project Overview
 
-A cross-platform daily calorie/macro tracker with AI-powered food recognition, barcode scanning, exercise logging, and dietary analysis. Built with Flutter, targeting Android, iOS, Web, Windows, Linux, and macOS.
+A local, single-user daily calorie/macro tracker with an AI coach, AI-powered food recognition, barcode scanning, exercise logging and dietary analysis. Built with Flutter, targeting Android, iOS, Web, Windows, Linux and macOS.
 
 ## Architecture
 
 **Clean Architecture Lite** — 3 layers: `data/`, `logic/`, `ui/`.
 
 - **State Management**: Single `ChangeNotifier` (`MainProvider`) via `provider` package
-- **Database**: SQLite via `sqflite` (native) / `sqflite_common_ffi` (desktop/web) — 3 tables
-- **AI**: Strategy pattern — `GenerativeService` abstract class with 4 implementations (Gemini, Claude, OpenAI, Grok)
-- **Navigation**: Navigator 1.0 (push/pop + showDialog), no routing package
-- **Theming**: 4 Material 3 themes, user-selectable, stored in SharedPreferences
+- **Database**: SQLite via `sqflite` (native) / `sqflite_common_ffi` (desktop) / `sqflite_common_ffi_web` (web) — 5 tables (`food_entries`, `activity_entries`, `food_items`, `weight_entries`, `user_plans`), schema version 4
+- **AI**: Strategy pattern — `GenerativeService` abstract class with 3 implementations (`GeminiApiService`, `ClaudeApiService`, `OpenAiCompatibleService`, the last one serving both OpenAI and Grok). `AiProvider` has 4 values. The available model list is fetched live by `ModelCatalogService`.
+- **Navigation**: Navigator 1.0 (push/pop + showDialog), no routing package. `AppShell` holds 4 tabs in an `IndexedStack`: Coach, Heute, Verlauf, Profil
+- **Theming**: 5 palettes (Amethyst, Saphir, Smaragd, Schwarz & Weiß, Pink) × light/dark/system, from the UNI-fied design system; colours only via colorScheme/AppColors, spacing/radius via Space/Corner tokens, UI composed from lib/ui/widgets/kit
 
 Full architecture details in `ARCHITECTURE.md`.
 
@@ -26,9 +26,9 @@ flutter analyze
 flutter run
 
 # Build
-flutter build apk / ios / web / windows
+flutter build apk / ios / web / windows / linux / macos
 
-# Tests (currently none active — skeleton only)
+# Tests (7 test files under test/)
 flutter test
 
 # Generate app icons
@@ -39,11 +39,12 @@ flutter pub run flutter_launcher_icons
 
 - **No comments in code** unless absolutely necessary for complex logic
 - **Immutable models**: `final` fields + `copyWith` — no code generation (no freezed/json_serializable)
-- **IDs**: Use `uuid` v4 for entities. `FoodItem.id` = `name.toLowerCase().replaceAll(' ', '_')`
+- **IDs**: Use `uuid` v4 for entities. `FoodItem.id` = `name.toLowerCase().trim().replaceAll(RegExp(r'\s+'), '_')`
 - **German locale**: All UI strings hardcoded in German, date format `de_DE`
 - **AI prompts**: German language, strict JSON output instruction, markdown fences stripped after parsing
-- **Error handling**: Prefix exceptions with service name (`GeminiError:`, `ClaudeError:`)
-- **Material 3**: All widgets use `useMaterial3: true`, `colorScheme.primary`, `FilledButton`, `OutlinedInputBorder`
+- **Error handling**: Throw `AiException` with a readable German message; prefix service-specific failures with the service name
+- **Material 3**: All widgets use `useMaterial3: true`, `colorScheme.primary`, `FilledButton`, outlined/filled inputs from the theme
+- **Design system**: Compose screens from `lib/ui/widgets/kit/` (`AppCard`, `SectionHeader`, `StatusPill`, `Notice`, `EmptyState`, `LoadingState`, `AppFeedback`). Colours only via `Theme.of(context).colorScheme.<role>` or `AppColors.of(context)`; spacing/radius only via `Space.*`, `Corner.*`, `Stroke.*` from `lib/ui/theme/tokens.dart`. No `Colors.red`, no `Color(0x...)`, no `withOpacity`.
 - **No assets folder**: Only Material icons (`uses-material-design: true`) and generated launcher icons
 
 ## Important Rules
@@ -55,6 +56,8 @@ flutter pub run flutter_launcher_icons
 5. **MainProvider is the single source of truth** — all state changes go through `notifyListeners()`
 6. **Database migrations** — use `onUpgrade` in `AppDatabase` with version bump; never drop tables
 7. **Platform-specific DB init** — use conditional exports pattern in `initialize_database.dart`
+8. **Flutter SDK on this machine**: `~/development/flutter/bin/flutter` (Flutter is not on PATH)
+9. **Errors must always reach the user**: set `MainProvider.errorMessage` (shown as SnackBar by AppShell) or call `AppFeedback.error` for local errors. Screens never show their own error banner for provider errors.
 
 ## File Naming
 
@@ -70,14 +73,27 @@ flutter pub run flutter_launcher_icons
 | `selectedDate` | `DateTime` | Currently viewed day |
 | `foodEntries` | `List<FoodEntry>` | Food for selected date |
 | `activityEntries` | `List<ActivityEntry>` | Activities for selected date |
-| `userProfile` | `UserProfile` | User data + API keys |
+| `userProfile` | `UserProfile` | User data + API keys + model overrides |
 | `goals` | `CalorieGoals` | Calculated daily targets |
+| `plans` | `List<UserPlan>` | Meal/training plans (read-only view) |
+| `activePlanCount` | `int` | Number of active plans |
+| `assistantMessages` | `List<ChatMessage>` | Coach chat history |
+| `assistantBusy` | `bool` | Coach is waiting for a reply |
+| `assistantStatus` | `String?` | Status line while the coach calls tools |
 | `isLoading` | `bool` | Loading indicator |
-| `errorMessage` | `String?` | Error to display |
+| `loadingLabel` | `String?` | Text shown next to the progress bar |
+| `errorMessage` | `String?` | Error, shown as SnackBar by AppShell |
+| `successMessage` | `String?` | Confirmation, shown as SnackBar by AppShell |
 | `scannedFoodInfo` | `FoodNutritionInfo?` | Barcode scan result |
-| `currentTheme` | `String` | Active theme name |
+| `currentTheme` | `String` | Active palette key (`amethyst`, `sapphire`, `smaragd`, `black_white`, `pink`) |
+| `themeMode` | `ThemeMode` | light / dark / system |
+| `modelsRefreshing` | `bool` | Model catalogue is being refreshed |
 
-Computed: `totalCalories`, `totalProtein`, `totalCarbs`, `totalFat`, `totalBurned`, `netCalories`
+Computed: `totalCalories`, `totalProtein`, `totalCarbs`, `totalFat`, `totalBurned`, `calorieBudget`, `weekStatus`, `weightOnSelectedDate`, `weightAverage7Days`, `dataVersion`
+
+## Tests
+
+`test/` contains 7 files, all runnable with `flutter test`: AI service HTTP payloads (mocked `http.Client`), JSON parsing, goals calculation, nutrition/history statistics, coach tools, `ModelCatalogService` and widget/dialog behaviour. Keep them green; update them when behaviour changes intentionally.
 
 ## DevOps & CI/CD
 
@@ -113,15 +129,16 @@ Tagged releases follow semver (v1.2.3).
 
 ### Current Status
 - **No CI/CD configured** — all builds manual
-- **No automated tests**
+- **Automated tests exist** — 7 files, run with `flutter test`
 - **No deployment pipeline**
-- All configs (signing, Firebase, Fastlane) need to be set up from scratch
+- All deploy configs (signing, Fastlane, store accounts) need to be set up from scratch
 
 ### Branch Strategy
 
 | Branch | Purpose |
 |--------|---------|
 | `main` | Production-ready, protected |
+| `develop` | Integration |
 | `feat/*` | Feature branches |
 | `release/v*` | Release candidates |
 | `hotfix/*` | Urgent fixes |

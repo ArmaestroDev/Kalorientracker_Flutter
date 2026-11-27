@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../../../data/models/activity_entry.dart';
 import '../../../logic/number_format.dart';
+import '../../theme/tokens.dart';
 import '../app_text_field.dart';
 
 class EditActivityDialog extends StatefulWidget {
@@ -90,7 +92,7 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
                 if (_submitted) setState(() {});
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: Space.md),
             AppTextField.number(
               controller: _caloriesController,
               label: 'Verbrannte Kalorien',
@@ -103,10 +105,10 @@ class _EditActivityDialogState extends State<EditActivityDialog> {
               },
               onSubmitted: (_) => _saveManual(),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: Space.lg),
             OutlinedButton.icon(
               onPressed: _recalculate,
-              icon: const Icon(Icons.auto_awesome, size: 18),
+              icon: const Icon(Icons.auto_awesome_rounded, size: 20),
               label: const Text('Mit KI neu schätzen'),
             ),
           ],

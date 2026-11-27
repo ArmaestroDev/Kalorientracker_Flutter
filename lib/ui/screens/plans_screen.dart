@@ -4,7 +4,9 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../data/models/user_plan.dart';
 import '../../logic/providers/main_provider.dart';
+import '../theme/tokens.dart';
 import '../widgets/app_text_field.dart';
+import '../widgets/kit/kit.dart';
 
 class PlansScreen extends StatefulWidget {
   const PlansScreen({super.key});
@@ -27,7 +29,7 @@ class _PlansScreenState extends State<PlansScreen> {
 
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty || !mounted) {
-        if (mounted) _showMessage('PDF konnte nicht gelesen werden.');
+        if (mounted) AppFeedback.error(context, 'PDF konnte nicht gelesen werden.');
         return;
       }
 
@@ -59,7 +61,7 @@ class _PlansScreenState extends State<PlansScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _extracting = false);
-        _showMessage('$e');
+        AppFeedback.error(context, '$e');
       }
     }
   }
@@ -84,14 +86,11 @@ class _PlansScreenState extends State<PlansScreen> {
                 label: 'Titel',
                 textCapitalization: TextCapitalization.sentences,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: Space.lg),
               DropdownButtonFormField<PlanType>(
                 initialValue: selectedType,
                 isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Art des Plans',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Art des Plans'),
                 items: [
                   for (final type in PlanType.values)
                     DropdownMenuItem(value: type, child: Text(type.label)),
@@ -166,14 +165,11 @@ class _PlansScreenState extends State<PlansScreen> {
                     if (submitted) setDialogState(() {});
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: Space.md),
                 DropdownButtonFormField<PlanType>(
                   initialValue: type,
                   isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Art des Plans',
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: const InputDecoration(labelText: 'Art des Plans'),
                   items: [
                     for (final t in PlanType.values)
                       DropdownMenuItem(value: t, child: Text(t.label)),
@@ -182,7 +178,7 @@ class _PlansScreenState extends State<PlansScreen> {
                     if (value != null) setDialogState(() => type = value);
                   },
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: Space.md),
                 AppTextField(
                   controller: contentController,
                   label: 'Inhalt des Plans',
@@ -260,22 +256,14 @@ class _PlansScreenState extends State<PlansScreen> {
     }
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
   static IconData _iconFor(PlanType type) => switch (type) {
-    PlanType.meal => Icons.restaurant_menu,
-    PlanType.training => Icons.fitness_center,
+    PlanType.meal => Icons.restaurant_menu_outlined,
+    PlanType.training => Icons.fitness_center_outlined,
     PlanType.combined => Icons.description_outlined,
   };
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
     final dateFmt = DateFormat('dd.MM.yyyy', 'de_DE');
 
     return Consumer<MainProvider>(
@@ -284,187 +272,180 @@ class _PlansScreenState extends State<PlansScreen> {
 
         return Scaffold(
           appBar: AppBar(title: const Text('Ernährungs- & Trainingspläne')),
-          body: Stack(
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(
+              Space.screenX,
+              Space.sm,
+              Space.screenX,
+              Space.xxl,
+            ),
             children: [
-              ListView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              const Notice(
+                message:
+                    'Aktive Pläne werden bei jeder Coach-Antwort automatisch berücksichtigt.',
+              ),
+              const SizedBox(height: Space.md),
+              Row(
                 children: [
-                  Card(
-                    color: colorScheme.secondaryContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.auto_awesome,
-                            color: colorScheme.onSecondaryContainer,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'Aktive Pläne werden bei jeder Coach-Antwort automatisch berücksichtigt.',
-                              style: TextStyle(
-                                color: colorScheme.onSecondaryContainer,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _extracting ? null : _pickPdf,
+                      icon: const Icon(Icons.picture_as_pdf_outlined),
+                      label: const Text('PDF hochladen'),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _extracting ? null : _pickPdf,
-                          icon: const Icon(Icons.picture_as_pdf),
-                          label: const Text('PDF hochladen'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _extracting
-                              ? null
-                              : () => _openPlanEditor(),
-                          icon: const Icon(Icons.edit_note),
-                          label: const Text('Text eingeben'),
-                        ),
-                      ),
-                    ],
+                  const SizedBox(width: Space.md),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _extracting ? null : () => _openPlanEditor(),
+                      icon: const Icon(Icons.edit_note_rounded),
+                      label: const Text('Text eingeben'),
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  if (plans.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 32),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.description_outlined,
-                            size: 48,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Noch keine Pläne hinterlegt',
-                            style: textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Lade deinen Ernährungs- oder Trainingsplan als PDF hoch, damit dein Coach sich immer daran orientiert.',
-                            textAlign: TextAlign.center,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    for (final plan in plans)
-                      Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    _iconFor(plan.type),
-                                    color: plan.isActive
-                                        ? colorScheme.primary
-                                        : colorScheme.onSurfaceVariant,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          plan.title,
-                                          style: textTheme.titleMedium
-                                              ?.copyWith(
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                        ),
-                                        Text(
-                                          '${plan.type.label} · ${dateFmt.format(plan.updatedAt)}'
-                                          '${plan.fileName != null ? ' · ${plan.fileName}' : ''}',
-                                          style: textTheme.bodySmall?.copyWith(
-                                            color: colorScheme.onSurfaceVariant,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Switch(
-                                    value: plan.isActive,
-                                    onChanged: (_) =>
-                                        provider.togglePlanActive(plan),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                plan.content,
-                                maxLines: 4,
-                                overflow: TextOverflow.ellipsis,
-                                style: textTheme.bodySmall,
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  TextButton.icon(
-                                    onPressed: () =>
-                                        _openPlanEditor(initialPlan: plan),
-                                    icon: const Icon(Icons.edit, size: 18),
-                                    label: const Text('Bearbeiten'),
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: () => _confirmDelete(plan),
-                                    icon: const Icon(
-                                      Icons.delete_outline,
-                                      size: 18,
-                                    ),
-                                    label: const Text('Löschen'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
                 ],
               ),
-              if (_extracting)
-                Container(
-                  color: Colors.black38,
-                  child: const Center(
-                    child: Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            CircularProgressIndicator(),
-                            SizedBox(height: 16),
-                            Text('PDF wird ausgelesen …'),
-                          ],
-                        ),
-                      ),
-                    ),
+              if (_extracting) ...[
+                const SizedBox(height: Space.lg),
+                const LinearProgressIndicator(),
+                const SizedBox(height: Space.sm),
+                Text(
+                  'PDF wird ausgelesen …',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
+              ],
+              const SizedBox(height: Space.lg),
+              if (plans.isEmpty)
+                const EmptyState(
+                  icon: Icons.description_outlined,
+                  title: 'Noch keine Pläne hinterlegt',
+                  message:
+                      'Lade deinen Ernährungs- oder Trainingsplan als PDF hoch, damit dein Coach sich immer daran orientiert.',
+                )
+              else
+                for (final plan in plans) ...[
+                  _PlanCard(
+                    plan: plan,
+                    icon: _iconFor(plan.type),
+                    dateLabel: dateFmt.format(plan.updatedAt),
+                    onToggle: () => provider.togglePlanActive(plan),
+                    onEdit: () => _openPlanEditor(initialPlan: plan),
+                    onDelete: () => _confirmDelete(plan),
+                  ),
+                  const SizedBox(height: Space.md),
+                ],
             ],
           ),
         );
       },
+    );
+  }
+}
+
+enum _PlanAction { edit, delete }
+
+class _PlanCard extends StatelessWidget {
+  final UserPlan plan;
+  final IconData icon;
+  final String dateLabel;
+  final VoidCallback onToggle;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _PlanCard({
+    required this.plan,
+    required this.icon,
+    required this.dateLabel,
+    required this.onToggle,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                icon,
+                color: plan.isActive
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: Space.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      plan.title,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      '${plan.type.label} · $dateLabel'
+                      '${plan.fileName != null ? ' · ${plan.fileName}' : ''}',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<_PlanAction>(
+                tooltip: 'Plan-Aktionen',
+                onSelected: (action) => switch (action) {
+                  _PlanAction.edit => onEdit(),
+                  _PlanAction.delete => onDelete(),
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
+                    value: _PlanAction.edit,
+                    child: Text('Bearbeiten'),
+                  ),
+                  PopupMenuItem(
+                    value: _PlanAction.delete,
+                    child: Text('Löschen'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: Space.sm),
+          Text(
+            plan.content,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.bodySmall,
+          ),
+          const SizedBox(height: Space.sm),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  plan.isActive ? 'Aktiv' : 'Inaktiv',
+                  style: textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Switch(
+                value: plan.isActive,
+                onChanged: (_) => onToggle(),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
